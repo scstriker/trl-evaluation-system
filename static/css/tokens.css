@@ -1,0 +1,151 @@
+/* ITEI design tokens — compiled from tokens.json. Themes: :root = light, [data-theme="dark"] = dark */
+:root, [data-theme="light"] {
+  --brand-navy: #044470;
+  --brand-navy-deep: #003056;
+  --brand-red: #b81c27;
+  --brand-sky: #0080cc;
+  --link: #006bb0;
+  --gradient-start: #0070b0;
+  --gradient-end: #004070;
+  --on-brand: #ffffff;
+  --on-gradient: #ffffff;
+  --surface: #ffffff;
+  --surface-sunken: #f4f7fa;
+  --surface-raised: #ffffff;
+  --ink: #1a1a1a;
+  --ink-muted: #5b6b7a;
+  --ink-disabled: #9aa7b3;
+  --border: #d5dde5;
+  --border-strong: #8fa1b3;
+  --focus: #0080cc;
+  --success: #1a7a3a;
+  --warning: #8f5400;
+  --danger: var(--brand-red);
+  --info: var(--link);
+  --success-bg: #e6f4ea;
+  --warning-bg: #fff3e0;
+  --danger-bg: #fbe9ea;
+  --info-bg: #e6f1f9;
+  --chart-1: var(--brand-navy);
+  --chart-2: var(--brand-sky);
+  --chart-3: var(--brand-red);
+  --chart-4: #8fa1b3;
+  --chart-5: #8f5400;
+  --shadow-none: none;
+  --shadow-raised: 0 1px 2px rgba(4, 68, 112, 0.10), 0 2px 8px rgba(4, 68, 112, 0.08);
+  --shadow-modal: 0 8px 24px rgba(4, 68, 112, 0.18);
+}
+[data-theme="dark"] {
+  --brand-navy: #5cb3ea;
+  --brand-navy-deep: #7fc6f0;
+  --brand-red: #ff6b74;
+  --brand-sky: #4fa3dc;
+  --link: #5cb3ea;
+  --gradient-start: #0070b0;
+  --gradient-end: #004070;
+  --on-brand: #0b1a2b;
+  --on-gradient: #ffffff;
+  --surface: #0b1a2b;
+  --surface-sunken: #071322;
+  --surface-raised: #12283f;
+  --ink: #e8eef4;
+  --ink-muted: #9fb3c6;
+  --ink-disabled: #5b6b7a;
+  --border: #2a4055;
+  --border-strong: #4b6480;
+  --focus: #5cb3ea;
+  --success: #7dd39a;
+  --warning: #f2b95c;
+  --danger: var(--brand-red);
+  --info: var(--link);
+  --success-bg: #0f2a1a;
+  --warning-bg: #2b1f08;
+  --danger-bg: #301216;
+  --info-bg: #0d2338;
+  --chart-1: var(--brand-navy);
+  --chart-2: var(--brand-sky);
+  --chart-3: var(--brand-red);
+  --chart-4: #9fb3c6;
+  --chart-5: #f2b95c;
+  --shadow-none: none;
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --brand-navy: #5cb3ea;
+  --brand-navy-deep: #7fc6f0;
+  --brand-red: #ff6b74;
+  --brand-sky: #4fa3dc;
+  --link: #5cb3ea;
+  --gradient-start: #0070b0;
+  --gradient-end: #004070;
+  --on-brand: #0b1a2b;
+  --on-gradient: #ffffff;
+  --surface: #0b1a2b;
+  --surface-sunken: #071322;
+  --surface-raised: #12283f;
+  --ink: #e8eef4;
+  --ink-muted: #9fb3c6;
+  --ink-disabled: #5b6b7a;
+  --border: #2a4055;
+  --border-strong: #4b6480;
+  --focus: #5cb3ea;
+  --success: #7dd39a;
+  --warning: #f2b95c;
+  --danger: var(--brand-red);
+  --info: var(--link);
+  --success-bg: #0f2a1a;
+  --warning-bg: #2b1f08;
+  --danger-bg: #301216;
+  --info-bg: #0d2338;
+  --chart-1: var(--brand-navy);
+  --chart-2: var(--brand-sky);
+  --chart-3: var(--brand-red);
+  --chart-4: #9fb3c6;
+  --chart-5: #f2b95c;
+  --shadow-none: none;
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.55);
+} }
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --header-height: 56px;
+  --content-max: 1200px;
+  --slash: 24px;
+  --radius-none: 0px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-pill: 999px;
+  --border-hairline: 1px;
+  --border-rule: 2px;
+  --border-accent: 4px;
+  --z-header: 100;
+  --z-dropdown: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --font-sans: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "HYCuSongJ", "汉仪粗宋简", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Microsoft YaHei", monospace;
+}
+.display-hero { font-family: var(--font-display); font-size: 48px; line-height: 56px; font-weight: 700; letter-spacing: 0.04em; }
+.title-page { font-family: var(--font-sans); font-size: 32px; line-height: 40px; font-weight: 700; }
+.title-section { font-family: var(--font-sans); font-size: 24px; line-height: 32px; font-weight: 700; }
+.title-sub { font-family: var(--font-sans); font-size: 18px; line-height: 26px; font-weight: 700; }
+.title-nav { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 700; letter-spacing: 0.02em; }
+.body-lg { font-family: var(--font-sans); font-size: 17px; line-height: 28px; font-weight: 400; }
+.body { font-family: var(--font-sans); font-size: 15px; line-height: 24px; font-weight: 400; }
+.body-sm { font-family: var(--font-sans); font-size: 13px; line-height: 20px; font-weight: 400; }
+.caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.label { font-family: var(--font-sans); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em; }
+.button { font-family: var(--font-sans); font-size: 15px; line-height: 20px; font-weight: 600; }
+.numeral { font-family: var(--font-sans); font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em; }
+.code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; }
+body { background: var(--surface); color: var(--ink); font-family: var(--font-sans); }
+:focus-visible { outline: var(--border-rule) solid var(--focus); outline-offset: 2px; }

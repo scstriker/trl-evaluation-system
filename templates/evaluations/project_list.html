@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}评价工作台 — TRL 评价系统{% endblock %}
+{% block header_title %}评价工作台{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>评价工作台</h1>
+      <div class="sub">创建评价项目后，系统按所选评价轨道从《评价细则》自动物化 TRL 1~9 级核验条目，逐级判定、逐级审核推进。</div>
+    </div>
+    <div class="actions">
+      {% if can_create %}
+      <a class="btn primary" href="{% url 'evaluations:project_create' %}">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        新建评价项目
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi hi"><span class="l">评价项目总数</span><span class="v">{{ counters.total }}<small>个</small></span><span class="d">全部评价轨道</span></div>
+    <div class="kpi"><span class="l">评价进行中</span><span class="v">{{ counters.in_progress }}<small>个</small></span><span class="d">逐级核验尚未完成</span></div>
+    <div class="kpi"><span class="l">达标待出报告</span><span class="v">{{ counters.ready_for_report }}<small>个</small></span><span class="d">已达目标等级，可生成报告</span></div>
+    <div class="kpi"><span class="l">已出报告</span><span class="v">{{ counters.reported }}<small>个</small></span><span class="d">报告版本可下载</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>评价项目列表</h2></div>
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>技术项目名称</th>
+            <th>委托（受评）单位</th>
+            <th>评价轨道</th>
+            <th class="num">目标等级</th>
+            <th class="num">达成等级</th>
+            <th>核验进度（目标级内）</th>
+            <th>状态</th>
+            <th class="nowrap">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><a href="{% url 'evaluations:project_detail' row.project.id %}"><strong>{{ row.project.name }}</strong></a>
+              {% if row.project.domain %}<div class="small muted">{{ row.project.domain }}</div>{% endif %}</td>
+            <td>{{ row.project.applicant }}</td>
+            <td class="nowrap">{{ row.project.get_track_display }}</td>
+            <td class="num"><span class="tag brand">TRL {{ row.project.target_level }}</span></td>
+            <td class="num">{% if row.achieved %}TRL {{ row.achieved }}{% else %}—{% endif %}</td>
+            <td>
+              <div class="flex" style="gap:8px">
+                <div class="progress" style="flex:1"><div class="bar" style="width:{{ row.stats.percent }}%"></div></div>
+                <span class="progress-label">{{ row.stats.completed }}/{{ row.stats.total }}</span>
+              </div>
+            </td>
+            <td>
+              {% if row.project.status == 'reported' %}<span class="tag success">已出报告</span>
+              {% elif row.project.status == 'locked' %}<span class="tag warning">已锁定</span>
+              {% elif row.project.status == 'archived' %}<span class="tag neutral">已归档</span>
+              {% elif row.ready %}<span class="tag info">待出报告</span>
+              {% elif row.stats.completed == 0 %}<span class="tag neutral">待开始</span>
+              {% else %}<span class="tag info">评价中</span>{% endif %}
+            </td>
+            <td class="nowrap">
+              <a class="btn ghost sm" href="{% url 'evaluations:project_detail' row.project.id %}">{% if row.project.status == 'in_progress' and not row.ready %}继续核验{% else %}查看{% endif %} →</a>
+              <a class="btn ghost sm" href="{% url 'reports:report_preview' row.project.id %}">报告</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="big">当前暂无评价项目</div>
+      <p>点击「新建评价项目」，系统将按评价轨道自动生成 TRL 1~9 级核验细则条目。</p>
+      {% if can_create %}<a class="btn primary" href="{% url 'evaluations:project_create' %}">新建评价项目</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

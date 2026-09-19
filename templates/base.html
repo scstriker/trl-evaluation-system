@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  {% load static %}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}技术就绪度（TRL）评价系统{% endblock %}</title>
+  <link href="{% static 'css/tokens.css' %}" rel="stylesheet">
+  <link href="{% static 'css/app.css' %}" rel="stylesheet">
+</head>
+<body {% block body_attrs %}{% endblock %}>
+  <header class="app-header" role="banner">
+    <a class="brand" href="{% url 'evaluations:project_list' %}" style="text-decoration:none">
+      <img src="{% static 'img/itei-logo.png' %}" alt="ITEI">
+      <span>技术就绪度评价系统</span>
+    </a>
+    <div class="title">{% block header_title %}TRL Evaluation{% endblock %}</div>
+    {% if request.user.is_authenticated %}
+    <nav aria-label="主导航">
+      <a href="{% url 'evaluations:project_list' %}" {% if '/projects/' in request.path %}aria-current="page"{% endif %}>评价工作台</a>
+      <a href="{% url 'rules:rule_library' %}" {% if request.path == '/rules/' %}aria-current="page"{% endif %}>评价细则库</a>
+      <a href="{% url 'rules:process_overview' %}" {% if '/rules/process/' in request.path %}aria-current="page"{% endif %}>评价流程</a>
+      <a href="{% url 'rules:mrl_framework' %}" {% if '/rules/mrl/' in request.path %}aria-current="page"{% endif %}>MRL框架</a>
+      <a href="{% url 'reports:global_report_list' %}" {% if '/reports/' in request.path %}aria-current="page"{% endif %}>报告</a>
+      {% if current_can_view_audit %}<a href="{% url 'audit:audit_list' %}" {% if '/audit/' in request.path %}aria-current="page"{% endif %}>审计</a>{% endif %}
+    </nav>
+    <div class="user-zone">
+      <span class="who">{{ request.user.username }}{% if current_role_label %} · {{ current_role_label }}{% endif %}</span>
+      <button class="btn sm secondary" type="button" data-modal-open="logout-modal" style="background:transparent;color:var(--on-gradient);border-color:rgba(255,255,255,.6)">退出</button>
+    </div>
+    {% endif %}
+  </header>
+  <div class="header-rule"></div>
+
+  {% if messages %}
+  <div class="toast-stack" role="status">
+    {% for message in messages %}
+    <div class="toast {% if message.tags == 'error' %}error{% elif message.tags == 'success' %}success{% else %}info{% endif %}">
+      <span>{{ message }}</span>
+      <button class="close" type="button" aria-label="关闭">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="app-footer no-print">
+    <div class="inner">
+      <span>机械工业仪器仪表综合技术经济研究所 · 技术就绪度（TRL）评价系统 Demo</span>
+      <span>评价依据：GB/T 22900-2022 / GB/T 41621-2022 / 《技术就绪度评价标准及细则》</span>
+    </div>
+  </footer>
+
+  {% if request.user.is_authenticated %}
+  <div class="modal-backdrop" id="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+    <div class="modal narrow">
+      <div class="modal-head"><h3 id="logout-title">退出登录</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body"><p class="mt-0 mb-0">确认退出当前账号 <strong>{{ request.user.username }}</strong> 吗？未保存的判定内容将丢失。</p></div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn primary" type="submit">确认退出</button></form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% block modals %}{% endblock %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

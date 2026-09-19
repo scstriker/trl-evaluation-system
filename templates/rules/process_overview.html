@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}评价流程 — TRL 评价系统{% endblock %}
+{% block header_title %}评价流程{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>技术就绪度评价流程</h1>
+      <div class="sub">依据 GB/T 22900-2022《科学技术研究项目评价通则》、GB/T 41621-2022《科学技术研究项目评价实施指南 开发研究项目》及《技术就绪度评价标准及细则》组织实施。</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-head"><h2>评价总体流程（七个环节）</h2><span class="small muted">系统覆盖第 3~6 环节的全过程线上留痕</span></div>
+    <div class="card-body">
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="no">1</div>
+          <div class="body">
+            <h3>受理委托</h3>
+            <p>委托单位提交评价申请，明确被评技术成果、评价轨道（设备 / 硬件 / 软件）与目标就绪度等级（TRL 1~9）。评价机构受理并在系统中建立评价项目，同时物化对应轨道的全量核验细则条目快照。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">2</div>
+          <div class="body">
+            <h3>组建评价组</h3>
+            <p>成立自评估工作组（委托单位技术骨干）与第三方评价组（评价机构专家），明确组长、成员的专业分工。系统按角色分配权限：评价员负责逐条判定，审核员负责级别确认、锁定与报告签发。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">3</div>
+          <div class="body">
+            <h3>资料收集与佐证核验</h3>
+            <p>按各级细则的「评价支撑信息」要求收集佐证材料（任务书、论文、专利、设计文档、测试报告、用户报告等），逐条挂载到对应细则。系统对每份材料计算 SHA-256 摘要防篡改，删除仅作软删除留痕。</p>
+          </div>
+        </div>
+        <div class="flow-step accent">
+          <div class="no">4</div>
+          <div class="body">
+            <h3>TRL 1~9 逐级核验判定（核心环节）</h3>
+            <p>从 TRL 1 级开始，评价组对当前级别的每条具体化等级条件逐条作出「满足 / 不满足 / 不适用」判定，并填写满足情况说明与评价支撑信息。判定由评价人员作出，系统只承载流程与留痕，不做自动达标判断。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">5</div>
+          <div class="body">
+            <h3>级别审核确认</h3>
+            <p>当前级别全部细则判定完成后，执行「审核通过本级」：本级结论冻结、下一级核验解锁，直至达到目标等级。达成等级 = 自 TRL 1 起连续审核通过的最高级别。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">6</div>
+          <div class="body">
+            <h3>报告编制</h3>
+            <p>按《技术就绪度评价报告》规范结构（概况 → 评价实施情况 → 评价准则 → 逐级分析说明 → 总结 → 佐证清单附录）在线预览并生成 Word 报告，版本递增、SHA-256 存档。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">7</div>
+          <div class="body">
+            <h3>审核批准签发</h3>
+            <p>报告经编制、审核、批准三级签署后正式出具。项目进入「已出报告」状态；如需复核，由审核员解锁后修改并生成新版报告。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><h2>评价依据</h2></div>
+      <div class="card-body">
+        <table class="data">
+          <tbody>
+            <tr><td class="nowrap">GB/T 22900-2022</td><td>《科学技术研究项目评价通则》</td></tr>
+            <tr><td class="nowrap">GB/T 41621-2022</td><td>《科学技术研究项目评价实施指南 开发研究项目》</td></tr>
+            <tr><td class="nowrap">—</td><td>《技术就绪度评价标准及细则》（TRL 1~9 级，77 条具体化等级条件）</td></tr>
+            <tr><td class="nowrap">—</td><td>项目任务书 / 委托合同规定的目标就绪度等级要求</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>流程规则要点</h2></div>
+      <div class="card-body">
+        <table class="data">
+          <tbody>
+            <tr><td class="nowrap"><span class="tag brand">逐级推进</span></td><td>必须自 TRL 1 起逐级核验，本级审核通过后方可解锁下一级</td></tr>
+            <tr><td class="nowrap"><span class="tag info">人工判定</span></td><td>判定结论由评价人员逐条作出，系统不作任何自动达标判断</td></tr>
+            <tr><td class="nowrap"><span class="tag success">佐证闭环</span></td><td>佐证材料哈希防伪、软删除留痕，锁定 / 出报告后冻结</td></tr>
+            <tr><td class="nowrap"><span class="tag warning">全程留痕</span></td><td>判定修改、级别通过、锁定解锁、报告生成全部写入审计流水</td></tr>
+            <tr><td class="nowrap"><span class="tag neutral">事实报告</span></td><td>报告为逐级核验事实记录与佐证汇总，结论以达成等级客观陈述</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

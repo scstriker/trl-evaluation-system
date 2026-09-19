@@ -1,0 +1,21 @@
+[project]
+name = "trl-evaluation-system"
+version = "0.1.0"
+description = "技术就绪度（TRL）评价系统 Demo —— 功能与流程展示"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=5.0",
+    "python-docx>=1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "openpyxl>=3.1",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+testpaths = ["tests"]

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}评价细则库 — TRL 评价系统{% endblock %}
+{% block header_title %}评价细则库{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>评价细则库</h1>
+      <div class="sub">《技术就绪度评价标准及细则》全量规则：TRL 1~9 级定义与 {{ total_items }} 条具体化等级条件（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）。项目创建时按轨道从本库物化条目快照。</div>
+    </div>
+    <div class="actions">
+      <select id="rule-track-filter" class="input" style="width:auto">
+        <option value="">全部轨别</option>
+        <option value="hw">仅硬件</option>
+        <option value="sw">仅软件</option>
+      </select>
+      <input type="text" id="rule-filter" class="input" style="width:240px" placeholder="搜索条款内容 / 佐证信息…">
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><span class="l">就绪度等级</span><span class="v">9<small>级</small></span><span class="d">TRL 1 ~ TRL 9</span></div>
+    <div class="kpi hi"><span class="l">细则条目总数</span><span class="v">{{ total_items }}<small>条</small></span><span class="d">具体化等级条件</span></div>
+    <div class="kpi"><span class="l">硬件轨细则</span><span class="v">{{ hw_total }}<small>条</small></span><span class="d">一般硬件产品技术适用</span></div>
+    <div class="kpi"><span class="l">软件轨细则</span><span class="v">{{ sw_total }}<small>条</small></span><span class="d">计算机软件技术适用</span></div>
+  </div>
+
+  {% for entry in levels %}
+  <details class="rule-level" {% if forloop.first %}open{% endif %}>
+    <summary>
+      <span class="no">{{ entry.level.level }}</span>
+      <span class="def">{{ entry.level.name }}</span>
+      <span class="cnt">硬件 {{ entry.hw_items|length }} 条 · 软件 {{ entry.sw_items|length }} 条</span>
+      <span class="chev">▸</span>
+    </summary>
+    <div class="rule-body">
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th class="num" style="width:60px">序号</th><th style="width:80px">适用</th><th>具体化等级条件</th><th style="width:220px">评价支撑信息</th></tr>
+          </thead>
+          <tbody>
+            {% for item in entry.hw_items %}
+            <tr data-rule-row data-track="hw" data-text="{{ item.name|lower }} {{ item.evidence|lower }}">
+              <td class="num">{{ item.seq }}</td>
+              <td><span class="tag info">硬件</span></td>
+              <td>{{ item.name }}</td>
+              <td class="muted">{{ item.evidence }}</td>
+            </tr>
+            {% endfor %}
+            {% for item in entry.sw_items %}
+            <tr data-rule-row data-track="sw" data-text="{{ item.name|lower }} {{ item.evidence|lower }}">
+              <td class="num">{{ item.seq }}</td>
+              <td><span class="tag neutral">软件</span></td>
+              <td>{{ item.name }}</td>
+              <td class="muted">{{ item.evidence }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% endblock %}

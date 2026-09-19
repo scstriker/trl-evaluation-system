@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}审计日志 — TRL 评价系统{% endblock %}
+{% block header_title %}审计日志{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>审计日志</h1>
+      <div class="sub">判定结论修改、级别审核通过、佐证上传删除、项目锁定解锁、报告生成等全部操作的不可变流水记录。</div>
+    </div>
+    <div class="actions">
+      <form method="get" class="flex">
+        <select name="action" class="input" style="width:auto" onchange="this.form.submit()">
+          <option value="" {% if not action_query %}selected{% endif %}>全部操作类型</option>
+          <option value="item.evaluate" {% if action_query == 'item.evaluate' %}selected{% endif %}>细则判定</option>
+          <option value="level.pass" {% if action_query == 'level.pass' %}selected{% endif %}>级别审核通过</option>
+          <option value="evidence" {% if action_query == 'evidence' %}selected{% endif %}>佐证材料</option>
+          <option value="project" {% if action_query == 'project' %}selected{% endif %}>项目锁定/解锁</option>
+          <option value="report" {% if action_query == 'report' %}selected{% endif %}>报告生成</option>
+        </select>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>操作流水</h2><span class="small muted">共 {{ page_obj.paginator.count }} 条 · 第 {{ page_obj.number }}/{{ page_obj.paginator.num_pages }} 页</span></div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th class="nowrap">时间</th><th>操作人</th><th>操作类型</th><th>对象</th><th>所属项目</th><th>变更内容</th></tr></thead>
+        <tbody>
+          {% for log in page_obj %}
+          <tr>
+            <td class="nowrap">{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ log.actor.username|default:"系统" }}</td>
+            <td>
+              {% if log.action == 'item.evaluate' %}<span class="tag info">细则判定</span>
+              {% elif log.action == 'level.pass' %}<span class="tag success">级别通过</span>
+              {% elif log.action == 'evidence.upload' %}<span class="tag neutral">佐证上传</span>
+              {% elif log.action == 'evidence.delete' %}<span class="tag danger">佐证删除</span>
+              {% elif log.action == 'project.lock' %}<span class="tag warning">项目锁定</span>
+              {% elif log.action == 'project.unlock' %}<span class="tag warning">项目解锁</span>
+              {% elif log.action == 'report.generate' %}<span class="tag brand">报告生成</span>
+              {% else %}<span class="tag neutral">{{ log.action }}</span>{% endif %}
+            </td>
+            <td>{{ log.object_repr }}</td>
+            <td>{% if log.project %}<a href="{% url 'evaluations:project_detail' log.project.id %}">{{ log.project.name }}</a>{% else %}—{% endif %}</td>
+            <td class="small mono" style="max-width:360px;word-break:break-all">{% if log.before %}{{ log.before }} → {% endif %}{{ log.after }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted">暂无审计记录</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="card-body flex" style="justify-content:center;padding:12px">
+      {% if page_obj.has_previous %}<a class="btn ghost sm" href="?page={{ page_obj.previous_page_number }}{% if action_query %}&action={{ action_query }}{% endif %}">← 上一页</a>{% endif %}
+      <span class="small muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+      {% if page_obj.has_next %}<a class="btn ghost sm" href="?page={{ page_obj.next_page_number }}{% if action_query %}&action={{ action_query }}{% endif %}">下一页 →</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
