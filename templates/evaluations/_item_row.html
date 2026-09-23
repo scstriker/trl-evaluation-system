@@ -1,22 +1,23 @@
-{# 单条核验细则行：需要上下文 item / mutable / level_passed #}
-<div class="check-row">
+{# 单条细则行：需要上下文 item / item_editable / can_comment #}
+<div class="check-row {% if item.review_comment %}has-comment{% endif %}">
   <div class="seq">{{ item.seq }}</div>
   <div class="main">
     <div class="nm">{{ item.name }}</div>
-    <div class="ev">评价支撑信息：{{ item.evidence }} · 编号 {{ item.code }}</div>
+    <div class="ev">评价支撑信息要求：{{ item.evidence }} · 编号 {{ item.code }}</div>
+    {% if item.review_comment %}<div class="review-note"><strong>审核意见：</strong>{{ item.review_comment }}</div>{% endif %}
   </div>
   <div class="side">
     {% if item.result == 'satisfied' %}<span class="tag success">满足</span>
-    {% elif item.result == 'not_satisfied' %}<span class="tag danger">不满足</span>
+    {% elif item.result == 'not_satisfied' %}<span class="tag warning">不满足</span>
     {% elif item.result == 'not_applicable' %}<span class="tag neutral">不适用</span>
-    {% else %}<span class="tag warning">未判定</span>{% endif %}
+    {% else %}<span class="tag outline">未填写</span>{% endif %}
     <span class="evd-count">
       <svg class="icon sm" viewBox="0 0 24 24"><path d="M15 7l-6.5 6.5a2.1 2.1 0 0 0 3 3L18 10a4.2 4.2 0 0 0-6-6L5.5 10.5"/></svg>
       佐证 {{ item.active_evidence_count }}
     </span>
-    <button class="btn {% if item.result == 'unevaluated' and mutable and not level_passed %}primary{% else %}secondary{% endif %} sm"
+    <button class="btn {% if item_editable and item.result == 'unevaluated' %}primary{% else %}secondary{% endif %} sm"
             type="button" data-modal-open="item-modal-{{ item.id }}">
-      {% if mutable and not level_passed %}{% if item.result == 'unevaluated' %}判定{% else %}修改判定{% endif %}{% else %}查看{% endif %}
+      {% if item_editable %}{% if item.result == 'unevaluated' %}填写自评{% else %}修改{% endif %}{% elif can_comment %}查看 / 写意见{% else %}查看{% endif %}
     </button>
   </div>
 </div>

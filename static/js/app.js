@@ -1,4 +1,4 @@
-/* TRL 评价系统 Demo — 交互脚本（弹窗 / Toast / 筛选） */
+/* 技术就绪度与制造成熟度评价系统 — 交互脚本（弹窗 / Toast / 筛选 / 防误操作） */
 (function () {
   "use strict";
 
@@ -12,7 +12,18 @@
     if (focusable) setTimeout(function () { focusable.focus(); }, 60);
   }
 
-  function closeModal(backdrop) {
+  /* 弹窗内有未保存的修改时，关闭前确认 */
+  function isDirty(backdrop) {
+    return Array.prototype.some.call(backdrop.querySelectorAll("form[data-dirty-guard]"), function (form) {
+      return form.getAttribute("data-dirty") === "1";
+    });
+  }
+
+  function closeModal(backdrop, force) {
+    if (!force && isDirty(backdrop) && !window.confirm("有未保存的修改，确定关闭吗？")) return;
+    backdrop.querySelectorAll("form[data-dirty-guard]").forEach(function (form) {
+      if (form.getAttribute("data-dirty") === "1") { form.reset(); form.removeAttribute("data-dirty"); }
+    });
     backdrop.classList.remove("open");
     if (!document.querySelector(".modal-backdrop.open")) {
       document.body.style.overflow = "";
@@ -64,9 +75,9 @@
   /* ---------- 判定弹窗内：结论切换提示文案 ---------- */
   document.querySelectorAll("[data-eval-form]").forEach(function (form) {
     var hints = {
-      satisfied: "请填写满足情况说明：结合佐证材料说明该条件如何被满足。",
-      not_satisfied: "请填写差距与不满足情况说明。",
-      not_applicable: "请填写不适用理由。"
+      satisfied: "自评为满足：请结合佐证材料说明该条件如何被满足。",
+      not_satisfied: "自评为不满足：请说明差距与不满足情况。",
+      not_applicable: "自评为不适用：请说明不适用理由。"
     };
     var hintEl = form.querySelector("[data-statement-hint]");
     form.querySelectorAll('input[name="result"]').forEach(function (radio) {
@@ -99,6 +110,36 @@
   }
   if (ruleFilter) ruleFilter.addEventListener("input", applyRuleFilter);
   if (trackFilter) trackFilter.addEventListener("change", applyRuleFilter);
+
+  /* ---------- 表单修改标记 + 提交防重复 ---------- */
+  document.querySelectorAll("form[data-dirty-guard]").forEach(function (form) {
+    form.addEventListener("input", function () { form.setAttribute("data-dirty", "1"); });
+    form.addEventListener("change", function () { form.setAttribute("data-dirty", "1"); });
+    form.addEventListener("submit", function () { form.removeAttribute("data-dirty"); });
+  });
+  document.querySelectorAll("form[method='post']").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type='submit']");
+      if (button) setTimeout(function () { button.disabled = true; }, 0);
+    });
+  });
+
+  /* ---------- 注册页：刷新图形验证码 ---------- */
+  function refreshCaptcha() {
+    var img = document.querySelector("[data-captcha]");
+    if (img) img.src = img.src.split("?")[0] + "?t=" + Date.now();
+  }
+  document.querySelectorAll("[data-captcha], [data-captcha-refresh]").forEach(function (el) {
+    el.addEventListener("click", refreshCaptcha);
+  });
+
+  /* ---------- 申报页：勾选评价内容后才显示目标等级 ---------- */
+  document.querySelectorAll("[data-toggle-target]").forEach(function (box) {
+    var target = document.getElementById(box.getAttribute("data-toggle-target"));
+    function sync() { if (target) target.classList.toggle("hidden", !box.checked); }
+    box.addEventListener("change", sync);
+    sync();
+  });
 
   /* ---------- 页面加载后自动打开指定弹窗（佐证上传回跳） ---------- */
   var auto = document.body.getAttribute("data-auto-modal");

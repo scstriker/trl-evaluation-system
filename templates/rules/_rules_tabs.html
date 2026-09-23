@@ -1,0 +1,7 @@
+{% if current_is_admin %}
+<nav class="project-tabs" aria-label="评价流程与细则">
+  <a href="{% url 'rules:process_overview' %}" {% if rule_tab == 'process' %}aria-current="page"{% endif %}>评价流程</a>
+  <a href="{% url 'rules:trl_rules' %}" {% if rule_tab == 'trl' %}aria-current="page"{% endif %}>技术就绪度（TRL）评价细则</a>
+  <a href="{% url 'rules:mrl_rules' %}" {% if rule_tab == 'mrl' %}aria-current="page"{% endif %}>制造成熟度（MRL）评价细则</a>
+</nav>
+{% endif %}

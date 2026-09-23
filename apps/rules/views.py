@@ -1,44 +1,55 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from apps.rules.models import MaturityLevel, MrlLevel, RuleItem
+from apps.accounts.permissions import admin_required
+from apps.rules.models import LevelDefinition, RuleItem
+from apps.rules.systems import MRL, TRL, get_system
 
 
-@login_required
-def rule_library(request):
-    """评价细则库：在 UI 中完整展示 TRL 1~9 全部等级定义与细则条目。"""
+@admin_required
+def rule_library(request, system=TRL):
+    """评价细则库（仅管理员）：按等级展示全部细则条目。"""
+    sys = get_system(system)
+    items = list(RuleItem.objects.filter(system=system))
     levels = []
-    items = list(RuleItem.objects.all())
-    for level in MaturityLevel.objects.all():
-        hw_items = [item for item in items if item.level == level.level and item.track == RuleItem.TRACK_HARDWARE]
-        sw_items = [item for item in items if item.level == level.level and item.track == RuleItem.TRACK_SOFTWARE]
+    for definition in LevelDefinition.objects.filter(system=system):
+        level_items = [item for item in items if item.level == definition.level]
         levels.append(
             {
-                "level": level,
-                "hw_items": hw_items,
-                "sw_items": sw_items,
-                "item_count": len(hw_items) + len(sw_items),
+                "definition": definition,
+                "items": level_items,
+                "hw_count": sum(1 for item in level_items if item.track == RuleItem.TRACK_HARDWARE),
+                "sw_count": sum(1 for item in level_items if item.track == RuleItem.TRACK_SOFTWARE),
             }
         )
     return render(
         request,
         "rules/rule_library.html",
         {
+            "sys": sys,
             "levels": levels,
             "total_items": len(items),
             "hw_total": sum(1 for item in items if item.track == RuleItem.TRACK_HARDWARE),
             "sw_total": sum(1 for item in items if item.track == RuleItem.TRACK_SOFTWARE),
+            "has_tracks": any(item.track != RuleItem.TRACK_GENERAL for item in items),
+            "active_nav": "process",
+            "rule_tab": system,
         },
     )
 
 
 @login_required
 def process_overview(request):
-    """评价流程总览：静态流程展示页。"""
-    return render(request, "rules/process_overview.html")
-
-
-@login_required
-def mrl_framework(request):
-    """制造成熟度（MRL）评级框架展示页（预留扩展模块）。"""
-    return render(request, "rules/mrl_framework.html", {"mrl_levels": MrlLevel.objects.all()})
+    """评价流程：企业与评价机构双方的办理流程，以及两类评价的等级定义。"""
+    return render(
+        request,
+        "rules/process_overview.html",
+        {
+            "trl_defs": LevelDefinition.objects.filter(system=TRL),
+            "mrl_defs": LevelDefinition.objects.filter(system=MRL),
+            "trl_rule_count": RuleItem.objects.filter(system=TRL).count(),
+            "mrl_rule_count": RuleItem.objects.filter(system=MRL).count(),
+            "active_nav": "process",
+            "rule_tab": "process",
+        },
+    )

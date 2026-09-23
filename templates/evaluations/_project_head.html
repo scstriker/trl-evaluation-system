@@ -1,0 +1,18 @@
+{# 项目页头 + 页签：需要 project / tabs（已开展的评价类别集合）/ tab（当前页签：trl|mrl|report） #}
+<div class="page-head">
+  <div>
+    <h1>{{ project.name }}</h1>
+    <div class="sub">
+      {{ project.applicant }} · {{ project.get_tech_type_display }}{% if project.domain %} · {{ project.domain }}{% endif %}
+      {% if project.report_no %} · 报告编号 {{ project.report_no }}{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    <a class="btn ghost sm" href="{% if tab == 'mrl' %}{% url 'evaluations:mrl_list' %}{% else %}{% url 'evaluations:trl_list' %}{% endif %}">← 返回项目列表</a>
+  </div>
+</div>
+<nav class="project-tabs" aria-label="项目页签">
+  <a href="{% url 'evaluations:assessment_detail' project.id 'trl' %}" {% if tab == 'trl' %}aria-current="page"{% endif %}>技术就绪度评价{% if 'trl' not in tabs %}<span class="muted small">（未开展）</span>{% endif %}</a>
+  <a href="{% url 'evaluations:assessment_detail' project.id 'mrl' %}" {% if tab == 'mrl' %}aria-current="page"{% endif %}>制造成熟度评价{% if 'mrl' not in tabs %}<span class="muted small">（未开展）</span>{% endif %}</a>
+  <a href="{% url 'reports:report_preview' project.id %}" {% if tab == 'report' %}aria-current="page"{% endif %}>评价报告</a>
+</nav>

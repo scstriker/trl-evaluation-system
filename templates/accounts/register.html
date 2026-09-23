@@ -1,0 +1,64 @@
+{% load static %}<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>企业注册 — {{ system_name }}</title>
+  <link href="{% static 'css/tokens.css' %}" rel="stylesheet">
+  <link href="{% static 'css/app.css' %}" rel="stylesheet">
+</head>
+<body>
+  <div class="login-shell">
+    {% include "accounts/_auth_brand.html" %}
+    <section class="login-form-zone">
+      <div class="login-card wide">
+        <h2>企业注册</h2>
+        <p class="sub">注册信息经评价机构审核通过后即可登录。每家企业（统一社会信用代码）限注册一个账号，请勿多人共用。</p>
+        {% if form.errors %}
+        <div class="alert danger" role="alert">注册信息有误，请按下方提示修改后重新提交（验证码需重新输入）。</div>
+        {% endif %}
+        <form method="post" class="form-grid register-form" novalidate>
+          {% csrf_token %}
+          {% for field in form %}
+          {% if field.name != 'captcha' %}
+          <div class="field">
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }} <span class="req">*</span></label>
+            {% if field.name == 'username' %}
+            <input type="text" class="input" name="username" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="英文字母开头，4~20 位字母、数字或下划线" autocomplete="username" maxlength="20" required>
+            {% elif field.name == 'contact_name' %}
+            <input type="text" class="input" name="contact_name" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="请输入联系人姓名" maxlength="64" required>
+            {% elif field.name == 'password1' %}
+            <input type="password" class="input" name="password1" id="{{ field.id_for_label }}" placeholder="至少 8 位，需同时包含字母和数字" autocomplete="new-password" required>
+            {% elif field.name == 'password2' %}
+            <input type="password" class="input" name="password2" id="{{ field.id_for_label }}" placeholder="请再次输入登录密码" autocomplete="new-password" required>
+            {% elif field.name == 'company_name' %}
+            <input type="text" class="input" name="company_name" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="与营业执照一致的企业中文全称" maxlength="255" required>
+            {% elif field.name == 'credit_code' %}
+            <input type="text" class="input mono" name="credit_code" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="18 位统一社会信用代码" maxlength="18" style="text-transform:uppercase" required>
+            {% elif field.name == 'phone' %}
+            <input type="text" class="input" name="phone" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="11 位手机号码" maxlength="11" inputmode="numeric" required>
+            {% endif %}
+            {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+          </div>
+          {% endif %}
+          {% endfor %}
+          <div class="field">
+            <label class="field-label" for="id_captcha">验证码 <span class="req">*</span></label>
+            <div class="captcha-row">
+              <input type="text" class="input" name="captcha" id="id_captcha" placeholder="请输入右侧字符" maxlength="8" autocomplete="off" required>
+              <img class="captcha-img" src="{% url 'accounts:captcha' %}" alt="图形验证码" width="120" height="40" data-captcha title="看不清？点击换一张">
+              <button class="btn ghost sm" type="button" data-captcha-refresh>换一张</button>
+            </div>
+            {% if form.captcha.errors %}<div class="error">{{ form.captcha.errors|join:"；" }}</div>{% endif %}
+          </div>
+          <button class="btn primary" type="submit" style="width:100%">提交注册</button>
+        </form>
+        <div class="auth-switch">
+          <a class="btn secondary" href="{% url 'accounts:login' %}" style="width:100%">已有账号，直接登录</a>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

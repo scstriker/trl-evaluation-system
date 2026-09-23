@@ -1,28 +1,35 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse
+from django.core.exceptions import ValidationError
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from apps.accounts.permissions import can_modify_project, can_view_project
+from apps.accounts.permissions import can_view_project, is_project_owner
 from apps.evaluations.models import CheckItem
 from apps.evidence import services
 from apps.evidence.models import EvidenceFile
 
 
 def _redirect_to_item(item):
-    url = reverse("evaluations:project_detail", args=[item.project_id])
+    url = reverse("evaluations:assessment_detail", args=[item.assessment.project_id, item.assessment.system])
     return redirect(f"{url}?level={item.level}&item={item.id}")
+
+
+def _owned_item_or_404(request, item):
+    project = item.assessment.project
+    if not can_view_project(request.user, project):
+        raise Http404("条目不存在。")
+    return is_project_owner(request.user, project)
 
 
 @login_required
 @require_POST
 def upload_evidence(request, item_id):
-    item = get_object_or_404(CheckItem.objects.select_related("project"), pk=item_id)
-    if not can_modify_project(request.user, item.project):
-        messages.error(request, "当前项目不可编辑或您没有上传权限。")
+    item = get_object_or_404(CheckItem.objects.select_related("assessment__project"), pk=item_id)
+    if not _owned_item_or_404(request, item):
+        messages.error(request, "佐证材料由申报企业上传。")
         return _redirect_to_item(item)
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
@@ -39,14 +46,14 @@ def upload_evidence(request, item_id):
 @login_required
 @require_POST
 def delete_evidence(request, evidence_id):
-    evidence = get_object_or_404(EvidenceFile.objects.select_related("check_item__project"), pk=evidence_id)
+    evidence = get_object_or_404(EvidenceFile.objects.select_related("check_item__assessment__project"), pk=evidence_id)
     item = evidence.check_item
-    if not can_modify_project(request.user, item.project):
-        messages.error(request, "当前项目不可编辑或您没有删除权限。")
+    if not _owned_item_or_404(request, item):
+        messages.error(request, "佐证材料只能由申报企业删除。")
         return _redirect_to_item(item)
     try:
         services.soft_delete_evidence(evidence, request.user)
-        messages.success(request, f"佐证材料「{evidence.original_filename}」已删除（软删除留痕）。")
+        messages.success(request, f"佐证材料「{evidence.original_filename}」已删除（保留删除记录）。")
     except ValidationError as exc:
         messages.error(request, "；".join(exc.messages))
     return _redirect_to_item(item)
@@ -54,7 +61,7 @@ def delete_evidence(request, evidence_id):
 
 @login_required
 def download_evidence(request, evidence_id):
-    evidence = get_object_or_404(EvidenceFile.objects.select_related("check_item__project"), pk=evidence_id)
-    if not can_view_project(request.user, evidence.check_item.project):
-        raise PermissionDenied("当前用户不能下载该佐证材料。")
+    evidence = get_object_or_404(EvidenceFile.objects.select_related("check_item__assessment__project"), pk=evidence_id)
+    if evidence.is_deleted or not can_view_project(request.user, evidence.check_item.assessment.project):
+        raise Http404("佐证材料不存在。")
     return FileResponse(evidence.file.open("rb"), as_attachment=True, filename=evidence.original_filename)

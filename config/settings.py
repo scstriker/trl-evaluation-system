@@ -4,7 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "trl-demo-dev-only-change-me")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "itei-trl-mrl-local-secret-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
 
@@ -66,7 +66,7 @@ TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Shanghai")
 USE_I18N = True
 USE_TZ = True
 
-# 展示型演示系统：静态资源保持极简策略，直接由 static/ 提供服务
+# 静态资源直接由 static/ 提供服务（单机部署，无需 collectstatic）
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -77,7 +77,7 @@ MEDIA_ROOT = Path(os.getenv("TRL_MEDIA_ROOT", BASE_DIR / "media"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "/login/"
-LOGIN_REDIRECT_URL = "/projects/"
+LOGIN_REDIRECT_URL = "/trl/"
 LOGOUT_REDIRECT_URL = "/login/"
 
 MAX_EVIDENCE_FILE_SIZE_MB = int(os.getenv("MAX_EVIDENCE_FILE_SIZE_MB", "50"))

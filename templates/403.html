@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}无权访问{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="card"><div class="empty-state">
+    <div class="big">无权访问该功能</div>
+    <p>{% if exception %}{{ exception }}{% else %}当前账号没有访问该功能的权限。{% endif %}</p>
+    <a class="btn primary" href="/">返回首页</a>
+  </div></div>
+</div>
+{% endblock %}

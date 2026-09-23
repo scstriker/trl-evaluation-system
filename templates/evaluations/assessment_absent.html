@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · {{ sys.name }}评价{% endblock %}
+{% block header_title %}{{ sys.name }}评价{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  {% include "evaluations/_project_head.html" with tab=sys.code %}
+
+  <div class="card">
+    <div class="card-head"><h2>该项目尚未开展{{ sys.name }}评价</h2></div>
+    <div class="card-body">
+      {% if not rules_ready %}
+        <p class="mt-0 mb-0 muted">{{ sys.name }}评价细则尚未导入，暂不能开展{{ sys.name }}评价。{% if not is_owner %}导入细则后，企业可在此为项目追加评价。{% endif %}</p>
+      {% elif is_owner %}
+        <p class="mt-0">追加{{ sys.name }}评价后，系统将按{{ sys.standard }}生成 {{ sys.abbr }} 1~{{ sys.max_level }} 级自评条目；两类评价都完成后可申请出具综合评价报告。</p>
+        <form method="post" action="{% url 'evaluations:add_assessment' project.id sys.code %}" class="form-grid">
+          {% csrf_token %}
+          <div class="field">
+            <label class="field-label">目标{{ sys.name }}等级 *</label>
+            <div class="choice-grid cols-{{ sys.max_level }}">
+              {% for d in levels %}
+              <label class="choice-card lv" title="{{ d.name }}">
+                <input type="radio" name="target_level" value="{{ d.level }}" {% if d.level == 4 %}checked{% endif %} required>
+                <span class="t">{{ sys.abbr }} {{ d.level }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="flex" style="justify-content:flex-end"><button class="btn primary" type="submit">追加{{ sys.name }}评价</button></div>
+        </form>
+      {% else %}
+        <p class="mt-0 mb-0 muted">是否开展{{ sys.name }}评价由申报企业决定。</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

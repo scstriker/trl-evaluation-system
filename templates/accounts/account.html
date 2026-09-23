@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}账号信息{% endblock %}
+{% block header_title %}账号信息{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>账号信息</h1>
+      <div class="sub">{% if profile %}企业注册信息由评价机构审核确认，如需变更请联系评价机构管理员。{% else %}评价机构管理员账号。{% endif %}</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><h2>{% if profile %}企业信息{% else %}账号{% endif %}</h2>{% if profile %}<span class="tag success">{{ profile.get_status_display }}</span>{% endif %}</div>
+      <div class="card-body" style="padding:0">
+        <table class="data kv">
+          <tbody>
+            <tr><th>用户名</th><td class="mono">{{ request.user.username }}</td></tr>
+            <tr><th>账号类型</th><td>{{ current_role_label }}</td></tr>
+            {% if profile %}
+            <tr><th>企业中文全称</th><td>{{ profile.company_name }}</td></tr>
+            <tr><th>统一社会信用代码</th><td class="mono">{{ profile.credit_code }}</td></tr>
+            <tr><th>联系人姓名</th><td>{{ profile.contact_name }}</td></tr>
+            <tr><th>手机号码</th><td class="mono">{{ profile.phone }}</td></tr>
+            <tr><th>注册时间</th><td>{{ profile.created_at|date:"Y-m-d H:i" }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>修改密码</h2></div>
+      <form method="post" class="card-body form-grid" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
+        <div class="field">
+          <label class="field-label" for="id_old_password">当前密码</label>
+          <input type="password" class="input" name="old_password" id="id_old_password" autocomplete="current-password" required>
+          {% if form.old_password.errors %}<div class="error">{{ form.old_password.errors|join:"；" }}</div>{% endif %}
+        </div>
+        <div class="field">
+          <label class="field-label" for="id_new_password1">新密码</label>
+          <input type="password" class="input" name="new_password1" id="id_new_password1" autocomplete="new-password" placeholder="至少 8 位，需同时包含字母和数字" required>
+          {% if form.new_password1.errors %}<div class="error">{{ form.new_password1.errors|join:"；" }}</div>{% endif %}
+        </div>
+        <div class="field">
+          <label class="field-label" for="id_new_password2">确认新密码</label>
+          <input type="password" class="input" name="new_password2" id="id_new_password2" autocomplete="new-password" required>
+          {% if form.new_password2.errors %}<div class="error">{{ form.new_password2.errors|join:"；" }}</div>{% endif %}
+        </div>
+        <div class="flex" style="justify-content:flex-end"><button class="btn primary" type="submit">保存新密码</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

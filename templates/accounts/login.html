@@ -3,35 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>登录 — 技术就绪度（TRL）评价系统</title>
+  <title>登录 — {{ system_name }}</title>
   <link href="{% static 'css/tokens.css' %}" rel="stylesheet">
   <link href="{% static 'css/app.css' %}" rel="stylesheet">
 </head>
 <body>
   <div class="login-shell">
-    <section class="login-brand">
-      <div class="mark"><img src="{% static 'img/itei-logo.png' %}" alt="ITEI"><span>ITEI · 仪综所</span></div>
-      <h1>技术就绪度<br>评价系统</h1>
-      <p class="sub">
-        依据《技术就绪度评价标准及细则》，面向装备与软件技术成果，
-        提供 TRL 1~9 级逐级核验、佐证材料管理、级别审核确认与第三方评价报告出具的全流程支撑。
-      </p>
-      <div class="rule-deco" aria-hidden="true"></div>
-    </section>
+    {% include "accounts/_auth_brand.html" %}
     <section class="login-form-zone">
       <div class="login-card">
         <h2>账号登录</h2>
-        <p class="sub">请使用评价机构分配的账号进入系统</p>
+        <p class="sub">企业用户请先注册，经评价机构审核通过后登录。</p>
         {% if form.errors %}
-        <div class="toast error" style="position:static;margin-bottom:16px">
-          <span>错误：用户名或密码不正确，请重新输入。</span>
+        <div class="alert danger" role="alert">
+          {% for error in form.non_field_errors %}<div>{{ error }}</div>{% empty %}<div>请填写用户名和密码。</div>{% endfor %}
         </div>
         {% endif %}
         <form method="post" class="form-grid">
           {% csrf_token %}
           <div class="field">
             <label class="field-label" for="id_username">用户名</label>
-            <input type="text" name="username" id="id_username" class="input" autofocus autocomplete="username" required>
+            <input type="text" name="username" id="id_username" class="input" value="{{ form.username.value|default:'' }}" autofocus autocomplete="username" required>
           </div>
           <div class="field">
             <label class="field-label" for="id_password">密码</label>
@@ -40,10 +32,11 @@
           <input type="hidden" name="next" value="{{ next }}">
           <button class="btn primary" type="submit" style="width:100%">登 录</button>
         </form>
-        <div class="demo-hint">
-          演示账号：<strong>admin</strong>（系统管理员）、<strong>evaluator</strong>（评价员）、
-          <strong>auditor</strong>（审核员）、<strong>viewer</strong>（观察员），密码见部署说明（seed_demo 命令输出）。
+        <div class="auth-switch">
+          <span>还没有账号？</span>
+          <a class="btn secondary" href="{% url 'accounts:register' %}" style="width:100%">企业注册</a>
         </div>
+        <p class="small muted" style="margin-top:16px">忘记密码请联系评价机构管理员重置。</p>
       </div>
     </section>
   </div>

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}审计日志 — TRL 评价系统{% endblock %}
+{% load ui %}
+{% block title %}审计日志{% endblock %}
 {% block header_title %}审计日志{% endblock %}
 
 {% block content %}
@@ -7,17 +8,14 @@
   <div class="page-head">
     <div>
       <h1>审计日志</h1>
-      <div class="sub">判定结论修改、级别审核通过、佐证上传删除、项目锁定解锁、报告生成等全部操作的不可变流水记录。</div>
+      <div class="sub">企业注册与账号审核、项目申报、自评填写、提交审核、审核通过与退回、佐证上传删除、报告生成等全部操作的流水记录，不可修改。</div>
     </div>
     <div class="actions">
       <form method="get" class="flex">
-        <select name="action" class="input" style="width:auto" onchange="this.form.submit()">
-          <option value="" {% if not action_query %}selected{% endif %}>全部操作类型</option>
-          <option value="item.evaluate" {% if action_query == 'item.evaluate' %}selected{% endif %}>细则判定</option>
-          <option value="level.pass" {% if action_query == 'level.pass' %}selected{% endif %}>级别审核通过</option>
-          <option value="evidence" {% if action_query == 'evidence' %}selected{% endif %}>佐证材料</option>
-          <option value="project" {% if action_query == 'project' %}selected{% endif %}>项目锁定/解锁</option>
-          <option value="report" {% if action_query == 'report' %}selected{% endif %}>报告生成</option>
+        <select name="action" class="input" style="width:auto" onchange="this.form.submit()" aria-label="操作类型">
+          {% for value, label in filters %}
+          <option value="{{ value }}" {% if action_query == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
         </select>
       </form>
     </div>
@@ -32,20 +30,11 @@
           {% for log in page_obj %}
           <tr>
             <td class="nowrap">{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
-            <td>{{ log.actor.username|default:"系统" }}</td>
-            <td>
-              {% if log.action == 'item.evaluate' %}<span class="tag info">细则判定</span>
-              {% elif log.action == 'level.pass' %}<span class="tag success">级别通过</span>
-              {% elif log.action == 'evidence.upload' %}<span class="tag neutral">佐证上传</span>
-              {% elif log.action == 'evidence.delete' %}<span class="tag danger">佐证删除</span>
-              {% elif log.action == 'project.lock' %}<span class="tag warning">项目锁定</span>
-              {% elif log.action == 'project.unlock' %}<span class="tag warning">项目解锁</span>
-              {% elif log.action == 'report.generate' %}<span class="tag brand">报告生成</span>
-              {% else %}<span class="tag neutral">{{ log.action }}</span>{% endif %}
-            </td>
+            <td>{{ log.actor|who }}</td>
+            <td class="nowrap"><span class="tag {{ log.tone }}">{{ log.label }}</span></td>
             <td>{{ log.object_repr }}</td>
-            <td>{% if log.project %}<a href="{% url 'evaluations:project_detail' log.project.id %}">{{ log.project.name }}</a>{% else %}—{% endif %}</td>
-            <td class="small mono" style="max-width:360px;word-break:break-all">{% if log.before %}{{ log.before }} → {% endif %}{{ log.after }}</td>
+            <td>{% if log.project %}<a href="{% url 'evaluations:project_home' log.project.id %}">{{ log.project.name }}</a>{% else %}—{% endif %}</td>
+            <td class="small mono" style="max-width:360px;word-break:break-all">{% if log.before %}{{ log.before }} → {% endif %}{{ log.after|default:"" }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="6" class="muted">暂无审计记录</td></tr>

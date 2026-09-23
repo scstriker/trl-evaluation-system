@@ -1,226 +1,191 @@
 {% extends "base.html" %}
-{% block title %}评价报告 — {{ project.name }}{% endblock %}
+{% load ui %}
+{% block title %}{{ report.title }} · {{ project.name }}{% endblock %}
 {% block header_title %}评价报告{% endblock %}
 
 {% block content %}
 <div class="page page-wide">
-  <div class="page-head no-print">
-    <div>
-      <h1>技术就绪度评价报告</h1>
-      <div class="sub">{{ project.name }} · 目标 TRL {{ project.target_level }} · 当前达成 TRL {{ achieved }} · 在线预览按《技术就绪度评价报告》规范结构渲染，与 Word 导出内容一致。</div>
-    </div>
-    <div class="actions">
-      {% if can_generate %}
-      <button class="btn primary" type="button" data-modal-open="generate-modal">
-        <svg class="icon" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14l3 3 3-3"/></svg>
-        生成 Word 报告
-      </button>
+  <div class="no-print">
+    {% include "evaluations/_project_head.html" with tab="report" tabs=assessment_tabs %}
+  </div>
+
+  <div class="report-type-tabs no-print" role="tablist" aria-label="报告类型">
+    {% for t in tabs %}
+      {% if t.available %}
+      <a href="?type={{ t.type }}" role="tab" {% if t.type == report_type %}aria-current="true"{% endif %}>
+        {{ t.label }}
+        {% if t.reasons %}<span class="state muted">未达目标</span>{% else %}<span class="state ok">可出具</span>{% endif %}
+      </a>
       {% else %}
-      <button class="btn secondary" type="button" data-modal-open="blocker-modal">生成 Word 报告</button>
+      <span class="disabled" title="{{ t.reasons|join:'；' }}">{{ t.label }}<span class="state muted">不可用</span></span>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="flex-between no-print" style="margin-bottom:16px">
+    <div class="small muted">在线预览与生成的 Word 报告内容一致。{% if blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</div>
+    <div class="flex">
+      {% if is_admin %}
+        {% if can_generate %}
+        <button class="btn primary" type="button" data-modal-open="generate-modal">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14l3 3 3-3"/></svg>
+          生成 Word 报告
+        </button>
+        {% else %}
+        <button class="btn secondary" type="button" data-modal-open="blocker-modal">生成 Word 报告</button>
+        {% endif %}
       {% endif %}
       {% if can_edit_info %}<button class="btn secondary" type="button" data-modal-open="info-modal">编辑报告信息</button>{% endif %}
       <button class="btn ghost" type="button" onclick="window.print()">打印 / 存为 PDF</button>
-      <a class="btn ghost" href="{% url 'evaluations:project_detail' project.id %}">← 评价工作区</a>
     </div>
   </div>
 
-  {% if generate_blockers %}
-  <div class="card no-print" style="margin-bottom:24px;border-left:4px solid var(--warning)">
-    <div class="card-body" style="padding:16px 24px">
-      <strong>报告尚不可生成：</strong>
-      <span class="muted">{{ generate_blockers|join:"；" }}。</span>
-      {% if achieved < project.target_level %}<a href="{% url 'evaluations:project_detail' project.id %}">继续逐级核验 →</a>{% endif %}
-    </div>
+  {% if blockers %}
+  <div class="alert {% if is_admin %}warning{% else %}info{% endif %} no-print" style="margin-bottom:16px">
+    <strong>{% if is_admin %}暂不能生成本报告：{% else %}报告尚未出具：{% endif %}</strong>{{ blockers|join:"；" }}。
   </div>
   {% endif %}
 
   <div class="card no-print" style="margin-bottom:24px">
-    <div class="card-head"><h2>报告版本</h2><span class="small muted">每次生成版本号递增，文件 SHA-256 存档</span></div>
+    <div class="card-head"><h2>已出具版本 · {{ report.title }}</h2><span class="small muted">每次生成版本号递增，文件 SHA-256 存档</span></div>
     {% if reports %}
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th class="num">版本</th><th>文件名</th><th class="num">达成等级</th><th class="nowrap">生成时间</th><th>生成人</th><th>SHA-256</th><th class="nowrap">操作</th></tr></thead>
+        <thead><tr><th class="num">版本</th><th>报告编号</th><th>文件名</th><th class="num">达成等级</th><th class="nowrap">生成时间</th><th>生成人</th><th>SHA-256</th><th class="nowrap">操作</th></tr></thead>
         <tbody>
-          {% for report in reports %}
+          {% for r in reports %}
           <tr>
-            <td class="num"><span class="tag brand">V{{ report.version }}</span></td>
-            <td>{{ report.filename }}</td>
-            <td class="num">TRL {{ report.achieved_level }}</td>
-            <td class="nowrap">{{ report.generated_at|date:"Y-m-d H:i" }}</td>
-            <td>{{ report.generated_by.username }}</td>
-            <td class="mono small" style="word-break:break-all">{{ report.sha256 }}</td>
-            <td class="nowrap"><a class="btn secondary sm" href="{% url 'reports:download_report' report.id %}">下载 Word</a></td>
+            <td class="num"><span class="tag brand">V{{ r.version }}</span></td>
+            <td class="mono small">{{ r.report_no }}</td>
+            <td>{{ r.filename }}</td>
+            <td class="num">{{ r.level_display }}</td>
+            <td class="nowrap">{{ r.generated_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ r.generated_by|who }}</td>
+            <td class="mono small" style="word-break:break-all">{{ r.sha256|slice:":16" }}…</td>
+            <td class="nowrap"><a class="btn secondary sm" href="{% url 'reports:download_report' r.id %}">下载 Word</a></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% else %}
-    <div class="card-body muted small">尚未生成报告版本。</div>
+    <div class="card-body muted small">尚未出具该类型的报告。</div>
     {% endif %}
   </div>
 
   {# ================= 报告在线预览 ================= #}
   <div class="report-sheet">
-    <div class="report-no">报告编号：{{ project.report_no|default:"（生成时自动分配）" }}</div>
-    <h1>技术就绪度评价报告</h1>
+    <div class="report-no">报告编号：{{ report_no_preview }}{% if not reports %}（生成时确定）{% endif %}</div>
+    <h1>{{ report.title }}</h1>
     <div class="report-cover-rule"></div>
     <div class="cover-proj">{{ project.name }}</div>
     <div class="cover-issuer">{{ project.issuer }}</div>
     <div class="cover-date">{% now "Y 年 n 月" %}</div>
 
-    <h2 class="page-break">1 概况</h2>
-    <h3>1.1 项目基本信息</h3>
-    <table class="data">
-      <tbody>
-        <tr><th style="width:180px">技术项目名称</th><td>{{ project.name }}</td></tr>
-        <tr><th>委托（受评）单位</th><td>{{ project.applicant }}</td></tr>
-        <tr><th>评价出具单位</th><td>{{ project.issuer }}</td></tr>
-        <tr><th>应用领域</th><td>{{ project.domain|default:"—" }}</td></tr>
-        <tr><th>评价轨道</th><td>{{ track_label }}</td></tr>
-        <tr><th>目标就绪度等级</th><td>TRL {{ project.target_level }}</td></tr>
-        <tr><th>评价达成等级</th><td><strong>TRL {{ achieved }}</strong></td></tr>
-      </tbody>
-    </table>
-    <h3>1.2 项目概况</h3>
-    <p>{{ project.overview_text|default:"（项目概况由委托单位提供，参见项目任务书及研制总结材料。可通过「编辑报告信息」填写。）"|linebreaksbr }}</p>
-
-    <h2>2 评价实施情况</h2>
-    <h3>2.1 评价目的和范围</h3>
-    <p>对{{ project.applicant }}研制的“{{ project.name }}”开展技术就绪度评价，验证其是否满足任务书中规定的技术就绪度 {{ project.target_level }} 级（TRL {{ project.target_level }}）的要求。评价范围覆盖 TRL 1 级至 TRL {{ achieved }} 级的全部核验细则条目。</p>
-    <h3>2.2 评价依据</h3>
-    <table class="data">
-      <thead><tr><th style="width:180px">标准编号</th><th>标准名称</th></tr></thead>
-      <tbody>{% for code, name in basis %}<tr><td>{{ code }}</td><td>{{ name }}</td></tr>{% endfor %}</tbody>
-    </table>
-    <h3>2.3 评价人员</h3>
-    <table class="data">
-      <thead><tr><th>角色</th><th>姓名</th><th>职称</th><th>专业及特长</th><th>工作单位</th></tr></thead>
-      <tbody>{% for role, name, title, spec, org in evaluators %}<tr><td>{{ role }}</td><td>{{ name }}</td><td>{{ title }}</td><td>{{ spec }}</td><td>{{ org }}</td></tr>{% endfor %}</tbody>
-    </table>
-    <h3>2.4 评价过程</h3>
-    <p>评价工作按照“受理委托—组建评价组—资料收集与佐证核验—逐级核验判定—级别审核确认—报告编制—审核批准”的流程实施。评价组依据《技术就绪度评价标准及细则》，对各级核验细则逐条比对佐证材料并作出判定，每一级全部细则判定完成并经审核确认后，方进入下一级核验。全过程判定痕迹与佐证材料均在系统中留痕可溯。</p>
-
-    <h2>3 评价准则</h2>
-    <div class="tbl-cap">表 3-1 技术就绪度等级定义</div>
-    <table class="data">
-      <thead><tr><th class="num" style="width:80px">等级</th><th>技术就绪度等级定义</th></tr></thead>
-      <tbody>{% for level, definition in level_defs.items %}<tr><td class="num">{{ level }}</td><td>{{ definition }}</td></tr>{% endfor %}</tbody>
-    </table>
-    {% for section in level_sections %}
-    <div class="tbl-cap">表 3-{{ section.level|add:1 }} 技术就绪度 {{ section.level }} 级条件</div>
-    <table class="data">
-      <thead><tr><th class="num" style="width:60px">序号</th><th style="width:70px">适用</th><th>第{{ section.level }}级：{{ section.definition }}</th><th style="width:200px">评价支撑信息</th></tr></thead>
-      <tbody>{% for item in section.items %}<tr><td class="num">{{ item.seq }}</td><td>{{ item.get_track_display }}</td><td>{{ item.name }}</td><td class="muted">{{ item.evidence }}</td></tr>{% endfor %}</tbody>
-    </table>
+    <div class="page-break"></div>
+    {% for block in report.blocks %}
+      {% if block.kind == 'h1' %}<h2>{{ block.text }}</h2>
+      {% elif block.kind == 'h2' %}<h3>{{ block.text }}</h3>
+      {% elif block.kind == 'p' %}<p>{% if block.strong %}<strong>{{ block.text|linebreaksbr }}</strong>{% else %}{{ block.text|linebreaksbr }}{% endif %}</p>
+      {% elif block.kind == 'caption' %}<div class="tbl-cap">{{ block.text }}</div>
+      {% elif block.kind == 'table' %}
+      <table class="data">
+        {% if block.info %}
+        <tbody>{% for row in block.rows %}<tr><th style="width:200px">{{ row.0 }}</th><td>{{ row.1 }}</td></tr>{% endfor %}</tbody>
+        {% else %}
+        <thead><tr>{% for h in block.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in block.rows %}<tr>{% for cell in row %}<td>{{ cell|linebreaksbr }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        {% endif %}
+      </table>
+      {% endif %}
     {% endfor %}
-
-    <h2>4 技术就绪度评价</h2>
-    <h3>4.1 综述</h3>
-    {% if project.summary_text %}<p>{{ project.summary_text|linebreaksbr }}</p>{% endif %}
-    <p>经评价组综合评估，“{{ project.name }}”达到了《技术就绪度评价标准及细则》规定的技术就绪度 <strong>{{ achieved }}</strong> 级（TRL {{ achieved }}）的条件。</p>
-    <h3>4.2 确定等级的分析说明</h3>
-    {% if level_sections %}
-    {% for section in level_sections %}
-    <div class="tbl-cap">表 4-{{ section.level }} 技术就绪度等级结论的分析说明（{{ section.level }} 级）{% if section.gate %} · {{ section.gate.passed_at|date:"Y-m-d" }} 审核通过{% endif %}</div>
-    <table class="data">
-      <thead><tr><th class="num" style="width:50px">序号</th><th style="width:60px">适用</th><th style="width:70px">是否满足</th><th>具体化等级条件</th><th>满足情况说明</th><th style="width:180px">评价支撑信息</th></tr></thead>
-      <tbody>
-        {% for item in section.items %}
-        <tr>
-          <td class="num">{{ item.seq }}</td>
-          <td>{{ item.get_track_display }}</td>
-          <td>{% if item.result == 'satisfied' %}是{% elif item.result == 'not_satisfied' %}否{% elif item.result == 'not_applicable' %}不适用{% else %}—{% endif %}</td>
-          <td>{{ item.name }}</td>
-          <td>{{ item.statement|default:"—" }}</td>
-          <td class="muted small">{% if item.support_info %}{{ item.support_info|linebreaksbr }}{% else %}{% for e in item.evidence_files.all %}{% if not e.is_deleted %}《{{ e.original_filename }}》<br>{% endif %}{% endfor %}{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endfor %}
-    {% else %}
-    <p class="muted">尚无审核通过的级别，逐级分析说明将在各级审核通过后自动生成。</p>
-    {% endif %}
-
-    <h2>5 总结</h2>
-    <p>本次评价累计核验细则条目 {{ stats.completed }} 条，其中判定满足 {{ stats.satisfied }} 条、不满足 {{ stats.not_satisfied }} 条、不适用 {{ stats.not_applicable }} 条。</p>
-    <p>综上所述，“{{ project.name }}”的技术就绪度状态达到了 <strong>{{ achieved }} 级（TRL {{ achieved }}）</strong>水平。</p>
-
-    <h2>附录A 评价支撑信息清单</h2>
-    <table class="data">
-      <thead><tr><th class="num" style="width:60px">编号</th><th>评价支撑信息（佐证材料）</th><th style="width:120px">关联细则</th><th style="width:160px">SHA-256（前 16 位）</th></tr></thead>
-      <tbody>
-        {% for e in evidence_files %}
-        <tr><td class="num">{{ forloop.counter }}</td><td>{{ e.original_filename }}{% if e.description %} <span class="muted">— {{ e.description }}</span>{% endif %}</td><td>{{ e.check_item.code }}</td><td class="mono small">{{ e.sha256|slice:":16" }}</td></tr>
-        {% empty %}
-        <tr><td colspan="4" class="muted">（无佐证材料）</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 </div>
 {% endblock %}
 
 {% block modals %}
+{% if is_admin and can_generate %}
 <div class="modal-backdrop" id="generate-modal" role="dialog" aria-modal="true">
   <div class="modal">
-    <div class="modal-head"><h3>生成 Word 评价报告</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <div class="modal-head"><h3>生成 {{ report.title }}</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
     <div class="modal-body">
-      <p class="mt-0">系统将按《技术就绪度评价报告》规范结构装配 Word 文档（.docx），内容包括：</p>
-      <table class="data">
+      <table class="data kv">
         <tbody>
-          <tr><td class="nowrap">封面 / 扉页</td><td>报告编号、题名、出具单位、编制·审核·批准签署栏</td></tr>
-          <tr><td class="nowrap">1 概况</td><td>项目基本信息表、项目概况</td></tr>
-          <tr><td class="nowrap">2 评价实施情况</td><td>目的范围、评价依据、评价人员、评价过程</td></tr>
-          <tr><td class="nowrap">3 评价准则</td><td>等级定义表 + TRL 1~{{ achieved }} 级条件表</td></tr>
-          <tr><td class="nowrap">4 技术就绪度评价</td><td>综述 + 逐级分析说明表（{{ stats.completed }} 条判定记录）</td></tr>
-          <tr><td class="nowrap">5 总结 / 附录A</td><td>达成等级结论、{{ evidence_files|length }} 项佐证材料清单</td></tr>
+          <tr><th>报告编号</th><td class="mono">{{ report_no_preview }}</td></tr>
+          <tr><th>版本</th><td>V{{ next_version }}</td></tr>
+          {% for part in report.parts %}<tr><th>{{ part.sys.name }}</th><td>目标 {{ part.sys.abbr }} {{ part.target }} · 达成 {{ part.sys.abbr }} {{ part.achieved }} · {{ part.counts.completed }} 条核验记录</td></tr>{% endfor %}
+          <tr><th>评价组成员</th><td>{{ report.team|length }} 人</td></tr>
+          <tr><th>佐证材料</th><td>{{ report.evidence_files|length }} 项</td></tr>
         </tbody>
       </table>
-      <p class="muted small mb-0" style="margin-top:12px">生成后项目状态变更为「已出报告」，判定结论冻结；版本号 V{{ reports|length|add:1 }}，如需修改可由审核员解锁后重新生成。</p>
+      <p class="muted small mb-0" style="margin-top:12px">生成后相关评价变为“已出报告”，企业可在“评价报告”中下载；如需修改，可在评价页重新开放后退回相应级别，再生成新版本。</p>
     </div>
     <div class="modal-foot">
       <button class="btn secondary" type="button" data-modal-close>取消</button>
-      <form method="post" action="{% url 'reports:generate_report' project.id %}">{% csrf_token %}<button class="btn primary" type="submit">确认生成 V{{ reports|length|add:1 }}</button></form>
+      <form method="post" action="{% url 'reports:generate_report' project.id %}">{% csrf_token %}<input type="hidden" name="type" value="{{ report_type }}"><button class="btn primary" type="submit">确认生成 V{{ next_version }}</button></form>
     </div>
   </div>
 </div>
+{% endif %}
 
+{% if is_admin and not can_generate %}
 <div class="modal-backdrop" id="blocker-modal" role="dialog" aria-modal="true">
   <div class="modal narrow">
     <div class="modal-head"><h3>暂不能生成报告</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
     <div class="modal-body">
-      <ul style="margin:0;padding-left:20px">{% for b in generate_blockers %}<li>{{ b }}</li>{% endfor %}</ul>
-      <p class="muted small mb-0" style="margin-top:12px">报告生成条件：目标等级及以下各级全部审核通过；由审核员或系统管理员执行。</p>
+      <ul style="margin:0;padding-left:20px">{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+      <p class="muted small mb-0" style="margin-top:12px">生成条件：相关评价的目标等级及以下各级全部审核通过，且已填写评价组成员。</p>
     </div>
-    <div class="modal-foot">
-      <button class="btn secondary" type="button" data-modal-close>知道了</button>
-      {% if achieved < project.target_level %}<a class="btn primary" href="{% url 'evaluations:project_detail' project.id %}">继续核验</a>{% endif %}
-    </div>
+    <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>知道了</button></div>
   </div>
 </div>
+{% endif %}
 
 {% if can_edit_info %}
 <div class="modal-backdrop" id="info-modal" role="dialog" aria-modal="true">
   <div class="modal wide">
-    <div class="modal-head"><h3>编辑报告编制信息</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
-    <form method="post" action="{% url 'reports:update_report_info' project.id %}">
+    <div class="modal-head"><h3>编辑报告信息</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reports:update_report_info' project.id %}" data-dirty-guard>
       {% csrf_token %}
+      <input type="hidden" name="type" value="{{ report_type }}">
       <div class="modal-body form-grid">
+        {% if info_form.report_no %}
         <div class="field">
-          <label class="field-label" for="{{ info_form.report_no.id_for_label }}">报告编号</label>
+          <label class="field-label" for="{{ info_form.report_no.id_for_label }}">报告编号（基础号）</label>
           {{ info_form.report_no }}
-          <div class="hint">留空则生成时自动分配</div>
+          <div class="hint">各类报告自动追加后缀：-TRL（技术就绪度）、-MRL（制造成熟度）、-ZH（综合）</div>
         </div>
+        {% endif %}
         <div class="field">
           <label class="field-label" for="{{ info_form.overview_text.id_for_label }}">1.2 项目概况（任务来源、研究目标、主要技术指标、总体进展）</label>
           {{ info_form.overview_text }}
         </div>
-        <div class="field">
-          <label class="field-label" for="{{ info_form.summary_text.id_for_label }}">4.1 评价综述</label>
-          {{ info_form.summary_text }}
-        </div>
+        {% if is_admin %}
+          {% for a in project.assessments.all %}
+          <div class="field">
+            <label class="field-label" for="summary-{{ a.system }}">{{ a.sys.name }}评价 · 综述（评价机构填写）</label>
+            <textarea class="input" id="summary-{{ a.system }}" name="summary_{{ a.system }}" rows="4">{{ a.summary_text }}</textarea>
+          </div>
+          {% endfor %}
+          <div class="field">
+            <label class="field-label">2.3 评价组成员 *（生成报告前必须填写，角色、姓名必填）</label>
+            {{ team_formset.management_form }}
+            <div class="table-wrap">
+              <table class="data team-table">
+                <thead><tr><th style="width:90px">角色</th><th style="width:100px">姓名</th><th style="width:130px">职称</th><th>专业及特长</th><th>工作单位</th><th class="num" style="width:56px">删除</th></tr></thead>
+                <tbody>
+                  {% for f in team_formset %}
+                  <tr>
+                    <td>{{ f.id }}{{ f.role }}</td><td>{{ f.name }}</td><td>{{ f.title }}</td><td>{{ f.specialty }}</td><td>{{ f.org }}</td>
+                    <td class="num">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="hint">空白行不会保存；需要更多行时，保存后会自动补充两行空白。</div>
+          </div>
+        {% endif %}
       </div>
       <div class="modal-foot">
         <button class="btn secondary" type="button" data-modal-close>取消</button>

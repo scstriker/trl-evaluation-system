@@ -1,0 +1,26 @@
+{% load static %}<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>注册已提交 — {{ system_name }}</title>
+  <link href="{% static 'css/tokens.css' %}" rel="stylesheet">
+  <link href="{% static 'css/app.css' %}" rel="stylesheet">
+</head>
+<body>
+  <div class="login-shell">
+    {% include "accounts/_auth_brand.html" %}
+    <section class="login-form-zone">
+      <div class="login-card">
+        <h2>注册已提交</h2>
+        <div class="alert success" style="margin-top:16px">
+          「{{ company }}」的注册申请已提交，正在等待评价机构审核。
+        </div>
+        <p>审核通过后即可使用注册的用户名和密码登录。审核期间尝试登录，系统会提示“账号正在审核中”。</p>
+        <p class="small muted">如信息填写有误或长时间未审核，请联系评价机构。</p>
+        <a class="btn primary" href="{% url 'accounts:login' %}" style="width:100%;margin-top:8px">返回登录</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

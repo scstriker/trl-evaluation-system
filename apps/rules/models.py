@@ -1,29 +1,39 @@
 from django.db import models
 
+from apps.rules.systems import SYSTEM_CHOICES
 
-class MaturityLevel(models.Model):
-    """技术就绪度（TRL）等级定义，1~9 级。"""
 
-    level = models.PositiveSmallIntegerField(unique=True)
+class LevelDefinition(models.Model):
+    """等级定义：技术就绪度 1~9 级、制造成熟度 1~10 级。"""
+
+    system = models.CharField(max_length=8, choices=SYSTEM_CHOICES)
+    level = models.PositiveSmallIntegerField()
     name = models.CharField(max_length=255, help_text="等级定义")
+    desc = models.TextField(blank=True, help_text="等级说明")
 
     class Meta:
-        ordering = ["level"]
+        constraints = [
+            models.UniqueConstraint(fields=["system", "level"], name="unique_level_definition"),
+        ]
+        ordering = ["system", "level"]
 
     def __str__(self):
-        return f"TRL {self.level} {self.name}"
+        return f"{self.system.upper()} {self.level} {self.name}"
 
 
 class RuleItem(models.Model):
-    """《评价细则》条目：每级按硬件/软件两轨划分。"""
+    """评价细则条目：技术就绪度按硬件/软件划分，制造成熟度为通用条目。"""
 
     TRACK_HARDWARE = "hw"
     TRACK_SOFTWARE = "sw"
+    TRACK_GENERAL = "gen"
     TRACK_CHOICES = [
         (TRACK_HARDWARE, "硬件"),
         (TRACK_SOFTWARE, "软件"),
+        (TRACK_GENERAL, "通用"),
     ]
 
+    system = models.CharField(max_length=8, choices=SYSTEM_CHOICES)
     level = models.PositiveSmallIntegerField()
     track = models.CharField(max_length=8, choices=TRACK_CHOICES)
     seq = models.PositiveSmallIntegerField()
@@ -32,23 +42,9 @@ class RuleItem(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["level", "track", "seq"], name="unique_rule_item"),
+            models.UniqueConstraint(fields=["system", "level", "track", "seq"], name="unique_rule_item"),
         ]
-        ordering = ["level", "track", "seq"]
+        ordering = ["system", "level", "track", "seq"]
 
     def __str__(self):
-        return f"TRL{self.level}-{self.get_track_display()}-{self.seq}"
-
-
-class MrlLevel(models.Model):
-    """制造成熟度（MRL）评级框架，1~10 级，预留扩展模块。"""
-
-    level = models.PositiveSmallIntegerField(unique=True)
-    name = models.CharField(max_length=128)
-    desc = models.TextField()
-
-    class Meta:
-        ordering = ["level"]
-
-    def __str__(self):
-        return f"MRL {self.level} {self.name}"
+        return f"{self.system.upper()}{self.level}-{self.get_track_display()}-{self.seq}"

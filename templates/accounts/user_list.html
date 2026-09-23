@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}用户管理{% endblock %}
+{% block header_title %}用户管理{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>用户管理</h1>
+      <div class="sub">企业自助注册的账号须经审核启用后方可登录。请核对企业全称、统一社会信用代码与联系人信息。</div>
+    </div>
+  </div>
+
+  <div class="filter-tabs" role="tablist" aria-label="账号状态">
+    <a href="?" {% if not status_filter %}aria-current="true"{% endif %}>全部 <span>{{ total }}</span></a>
+    {% for value, label in status_choices %}
+    <a href="?status={{ value }}" {% if status_filter == value %}aria-current="true"{% endif %}>{{ label }} <span>{{ counts|get_item:value|default:0 }}</span></a>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>企业账号</h2>{% if counts.pending %}<span class="tag warning">{{ counts.pending }} 个注册待审核</span>{% endif %}</div>
+    {% if profiles %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>企业中文全称</th><th>统一社会信用代码</th><th>联系人 / 手机</th><th>用户名</th><th class="nowrap">注册时间</th><th>状态</th><th>审核记录</th><th class="nowrap">操作</th></tr>
+        </thead>
+        <tbody>
+          {% for p in profiles %}
+          <tr>
+            <td><strong>{{ p.company_name }}</strong></td>
+            <td class="mono">{{ p.credit_code }}</td>
+            <td>{{ p.contact_name }}<div class="small muted mono">{{ p.phone }}</div></td>
+            <td class="mono">{{ p.user.username }}</td>
+            <td class="nowrap">{{ p.created_at|date:"Y-m-d H:i" }}</td>
+            <td class="nowrap">
+              {% if p.status == 'pending' %}<span class="tag warning">待审核</span>
+              {% elif p.status == 'active' %}<span class="tag success">已启用</span>
+              {% elif p.status == 'rejected' %}<span class="tag neutral">已驳回</span>
+              {% else %}<span class="tag neutral">已停用</span>{% endif %}
+            </td>
+            <td class="small muted">
+              {% if p.reviewed_at %}{{ p.reviewed_by|who }} · {{ p.reviewed_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}
+              {% if p.reject_reason %}<div>驳回原因：{{ p.reject_reason }}</div>{% endif %}
+            </td>
+            <td class="nowrap">
+              {% if p.status == 'pending' %}
+                <button class="btn primary sm" type="button" data-modal-open="approve-{{ p.pk }}">审核通过</button>
+                <button class="btn secondary sm" type="button" data-modal-open="reject-{{ p.pk }}">驳回</button>
+              {% elif p.status == 'rejected' %}
+                <button class="btn secondary sm" type="button" data-modal-open="approve-{{ p.pk }}">改为通过</button>
+              {% elif p.status == 'active' %}
+                <button class="btn secondary sm" type="button" data-modal-open="disable-{{ p.pk }}">停用</button>
+                <button class="btn ghost sm" type="button" data-modal-open="reset-{{ p.pk }}">重置密码</button>
+              {% else %}
+                <button class="btn secondary sm" type="button" data-modal-open="enable-{{ p.pk }}">启用</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="big">暂无符合条件的企业账号</div><p>企业在登录页点击“企业注册”提交信息后，会出现在这里等待审核。</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for p in profiles %}
+  {% if p.status == 'pending' or p.status == 'rejected' %}
+  <div class="modal-backdrop" id="approve-{{ p.pk }}" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>审核通过</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body">
+        <p class="mt-0">请确认以下注册信息与营业执照一致：</p>
+        <table class="data kv"><tbody>
+          <tr><th>企业全称</th><td>{{ p.company_name }}</td></tr>
+          <tr><th>信用代码</th><td class="mono">{{ p.credit_code }}</td></tr>
+          <tr><th>联系人</th><td>{{ p.contact_name }}（{{ p.phone }}）</td></tr>
+        </tbody></table>
+        <p class="small muted mb-0" style="margin-top:12px">通过后该企业即可登录，只能看到自己申报的项目。</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'accounts:user_action' p.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn primary" type="submit">确认通过</button></form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if p.status == 'pending' %}
+  <div class="modal-backdrop" id="reject-{{ p.pk }}" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>驳回注册申请</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'accounts:user_action' p.pk 'reject' %}">
+        {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="modal-body form-grid">
+          <p class="mt-0 mb-0">驳回「{{ p.company_name }}」的注册申请。</p>
+          <div class="field">
+            <label class="field-label" for="reason-{{ p.pk }}">驳回原因 *（企业登录时可见）</label>
+            <textarea class="input" id="reason-{{ p.pk }}" name="reason" rows="3" required placeholder="例如：企业全称与统一社会信用代码不一致，请核对后重新注册"></textarea>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn danger" type="submit">确认驳回</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  {% if p.status == 'active' %}
+  <div class="modal-backdrop" id="disable-{{ p.pk }}" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>停用账号</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body"><p class="mt-0 mb-0">停用后「{{ p.company_name }}」将立即退出并无法登录，其项目与报告数据保留。确认停用？</p></div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'accounts:user_action' p.pk 'disable' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn danger" type="submit">确认停用</button></form>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="reset-{{ p.pk }}" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>重置登录密码</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'accounts:user_action' p.pk 'reset-password' %}">
+        {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="modal-body form-grid">
+          <p class="mt-0 mb-0">为「{{ p.company_name }}」（{{ p.user.username }}）设置新密码，并通过电话等方式告知联系人 {{ p.contact_name }}。</p>
+          <div class="field">
+            <label class="field-label" for="pwd-{{ p.pk }}">新密码 *</label>
+            <input type="text" class="input mono" id="pwd-{{ p.pk }}" name="new_password" required autocomplete="off" placeholder="至少 8 位，需同时包含字母和数字">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认重置</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  {% if p.status == 'disabled' %}
+  <div class="modal-backdrop" id="enable-{{ p.pk }}" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>启用账号</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body"><p class="mt-0 mb-0">启用后「{{ p.company_name }}」可重新登录。确认启用？</p></div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'accounts:user_action' p.pk 'enable' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn primary" type="submit">确认启用</button></form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+{% endblock %}

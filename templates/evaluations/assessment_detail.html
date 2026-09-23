@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}{{ project.name }} · {{ sys.name }}评价{% endblock %}
+{% block header_title %}{{ sys.name }}评价{% endblock %}
+{% block body_attrs %}{% if reopen_item %}data-auto-modal="item-modal-{{ reopen_item }}"{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  {% include "evaluations/_project_head.html" with tab=sys.code %}
+
+  {# ================= 状态提示（防呆） ================= #}
+  {% if assessment.status == 'reported' %}
+  <div class="alert success">
+    <strong>{{ sys.name }}评价已出具报告，内容已冻结。</strong>
+    {% if is_admin %}如需复核修改，可<button class="btn ghost sm" type="button" data-modal-open="reopen-modal">重新开放评价</button>{% else %}可在“评价报告”页签下载报告。{% endif %}
+  </div>
+  {% elif ready_for_report %}
+  <div class="alert success">
+    <strong>已全部审核通过至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。</strong>
+    {% if is_admin %}<a href="{% url 'reports:report_preview' project.id %}?type={{ sys.code }}">前往生成报告 →</a>{% else %}等待评价机构出具评价报告。{% endif %}
+  </div>
+  {% endif %}
+
+  {% if is_owner and returned_reviews %}
+  <div class="alert warning">
+    <strong>以下级别被评价机构退回，请按审核意见修改后重新提交审核：</strong>
+    <ul class="alert-list">
+      {% for g in returned_reviews %}
+      <li><a href="?level={{ g.first }}">第 {{ g.levels_text }} 级</a>：{{ g.review.comment }} <span class="small muted">（{{ g.review.reviewed_by|who }} · {{ g.review.reviewed_at|date:"Y-m-d H:i" }}）</span></li>
+      {% endfor %}
+    </ul>
+    <div class="small">条目上标有“审核意见”的，请逐条对照修改。</div>
+  </div>
+  {% endif %}
+  {% if is_owner and submitted_levels and assessment.status == 'in_progress' %}
+  <div class="alert info">第 {{ submitted_text }} 级已提交，等待评价机构审核；审核期间这些级别不能修改。</div>
+  {% endif %}
+
+  {% if is_admin and submitted_levels and assessment.status == 'in_progress' %}
+  <div class="card review-panel">
+    <div class="card-head">
+      <h2>待审核：第 {{ submitted_text }} 级</h2>
+      <span class="small muted">提交人 {{ submitted_review.submitted_by|who }} · {{ submitted_review.submitted_at|date:"Y-m-d H:i" }}</span>
+    </div>
+    <div class="card-body">
+      <p class="mt-0">请逐级核查企业的自评结论、满足情况说明与佐证材料。系统不做自动达标判断，是否通过由评价机构确认；需要企业修改的，填写审核意见后退回。</p>
+      {% if review_attention.not_satisfied or review_attention.no_evidence %}
+      <div class="attention">
+        {% if review_attention.not_satisfied %}<div><span class="tag warning">自评不满足 {{ review_attention.not_satisfied|length }} 条</span>
+          {% for item in review_attention.not_satisfied %}<a href="?level={{ item.level }}&item={{ item.id }}" class="code-link">{{ item.code }}</a>{% endfor %}</div>{% endif %}
+        {% if review_attention.no_evidence %}<div><span class="tag neutral">满足但无佐证 {{ review_attention.no_evidence|length }} 条</span>
+          {% for item in review_attention.no_evidence %}<a href="?level={{ item.level }}&item={{ item.id }}" class="code-link">{{ item.code }}</a>{% endfor %}</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if resubmitted_reviews %}
+      <div class="small muted" style="margin-top:8px">
+        {% for r in resubmitted_reviews %}<div>第 {{ r.level }} 级为退回后重新提交，上次审核意见：{{ r.comment }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      <div class="flex" style="margin-top:16px">
+        {% if pass_plan %}
+        <button class="btn primary" type="button" data-modal-open="pass-modal">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg> 审核通过…
+        </button>
+        {% else %}
+        <span class="small muted">第 {{ achieved|add:1 }} 级尚未提交，需企业提交后才能按顺序审核通过后续级别。</span>
+        {% endif %}
+        <button class="btn secondary" type="button" data-modal-open="return-modal">退回修改…</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ================= 概况 ================= #}
+  <div class="kpi-row">
+    <div class="kpi"><span class="l">目标等级</span><span class="v">{{ sys.abbr }} {{ assessment.target_level }}</span><span class="d">{{ sys.standard }}</span></div>
+    <div class="kpi"><span class="l">已审核通过</span><span class="v">{% if achieved %}{{ sys.abbr }} {{ achieved }}{% else %}—{% endif %}</span><span class="d">自第 1 级起连续通过的最高级别</span></div>
+    <div class="kpi"><span class="l">自评进度（目标级内）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
+    <div class="kpi"><span class="l">满足 / 不满足 / 不适用</span><span class="v">{{ scope.satisfied }} / {{ scope.not_satisfied }} / {{ scope.not_applicable }}</span><span class="d">不满足、不适用需说明理由</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>{{ sys.abbr }} 1~{{ sys.max_level }} 逐级进度</h2>
+      <div class="flex">
+        <span class="small muted">点击等级查看条目</span>
+        {% if is_owner and submit_plan %}
+        <button class="btn {% if default_submit %}primary{% else %}secondary{% endif %} sm" type="button" data-modal-open="submit-modal">
+          <svg class="icon sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> 提交审核…
+        </button>
+        {% endif %}
+        {% if is_admin and returnable and not submitted_levels %}
+        <button class="btn secondary sm" type="button" data-modal-open="return-modal">退回修改…</button>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="level-ladder" style="--levels:{{ sys.max_level }}" role="tablist" aria-label="{{ sys.abbr }} 等级">
+        {% for s in states %}
+        {% if s.state == 'out_of_scope' %}
+        <span class="lv-step out h{{ s.level }}" title="第 {{ s.level }} 级超出目标等级，无需填写">
+          <span class="lvl">{{ s.level }}</span><span class="st">超出目标</span>
+        </span>
+        {% else %}
+        <a class="lv-step {{ s.state }} h{{ s.level }} {% if s.level == view_level %}viewing{% endif %}" href="?level={{ s.level }}" role="tab"
+           {% if s.level == view_level %}aria-current="true"{% endif %} title="第 {{ s.level }} 级：{{ s.label }}，已填写 {{ s.completed }}/{{ s.total }}">
+          {% if s.is_target %}<span class="target-mark">目标</span>{% endif %}
+          <span class="lvl">{{ s.level }}</span>
+          <span class="st">{% if s.state == 'draft' or s.state == 'returned' %}{{ s.label }} {{ s.completed }}/{{ s.total }}{% else %}{{ s.label }}{% endif %}</span>
+        </a>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <div class="ladder-legend small muted">
+        <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>已提交待审核</span><span><i class="sw returned"></i>已退回</span><span><i class="sw ready"></i>填写中 / 待提交</span><span><i class="sw out"></i>超出目标等级</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <div class="level-banner">
+    <div>
+      <div class="def">第 {{ view_level }} 级 · {{ level_def.name|default:"" }}</div>
+      <div class="meta">
+        本级细则 {{ current_state.total }} 条：满足 {{ current_state.satisfied }} · 不满足 {{ current_state.not_satisfied }} · 不适用 {{ current_state.not_applicable }} · 未填写 {{ current_state.unevaluated }}
+      </div>
+      {% if level_def.desc %}<div class="meta">{{ level_def.desc }}</div>{% endif %}
+    </div>
+    <div class="flex">
+      {% if current_state.state == 'passed' %}<span class="tag success">已审核通过 · 内容冻结</span>
+      {% elif current_state.state == 'submitted' %}<span class="tag info">已提交 · 等待审核</span>
+      {% elif current_state.state == 'returned' %}<span class="tag warning">已退回 · 请修改</span>
+      {% elif current_state.state == 'ready' %}<span class="tag info">已填写完整 · 待提交</span>
+      {% else %}<span class="tag neutral">填写中</span>{% endif %}
+    </div>
+  </div>
+  {% if current_state.state == 'returned' and current_state.review.comment %}
+  <div class="alert warning" style="margin-top:12px"><strong>本级审核意见：</strong>{{ current_state.review.comment }}</div>
+  {% endif %}
+
+  {% for group in groups %}
+  <div class="item-group-title">{{ group.title }}</div>
+  {% for item in group.items %}{% include "evaluations/_item_row.html" %}{% endfor %}
+  {% empty %}
+  <div class="empty-state"><div class="big">本级没有适用的细则条目</div></div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block modals %}
+  {% for group in groups %}{% for item in group.items %}{% include "evaluations/_item_modal.html" %}{% endfor %}{% endfor %}
+
+  {# ---- 企业：提交审核 ---- #}
+  {% if is_owner and submit_plan %}
+  <div class="modal-backdrop" id="submit-modal" role="dialog" aria-modal="true" aria-labelledby="submit-title">
+    <div class="modal wide">
+      <div class="modal-head"><h3 id="submit-title">提交审核 · {{ sys.name }}评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'evaluations:submit' project.id sys.code %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="mt-0">选择本次提交的范围。可以逐级提交，也可以一次提交至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。提交后所选级别进入评价机构审核，<strong>审核期间不能修改</strong>。</p>
+          <div class="option-list">
+            {% for opt in submit_plan %}
+            <label class="option {% if not opt.ready %}disabled{% endif %}">
+              <input type="radio" name="up_to" value="{{ opt.up_to }}" {% if not opt.ready %}disabled{% endif %} {% if opt.up_to == default_submit %}checked{% endif %} required>
+              <span class="t">提交至第 {{ opt.up_to }} 级</span>
+              <span class="d">
+                本次提交：第 {{ opt.levels_text }} 级 ·
+                {% if opt.ready %}<span class="ok">已填写完整</span>
+                {% else %}尚未填完：{% for level, count in opt.missing %}<a href="?level={{ level }}">第 {{ level }} 级剩 {{ count }} 条</a>{% if not forloop.last %}、{% endif %}{% endfor %}{% endif %}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          {% if not default_submit %}
+          <div class="alert warning" style="margin-top:12px">当前没有可提交的级别：请先把第 {{ submit_plan.0.up_to }} 级的全部条目填写完整。</div>
+          {% endif %}
+          {% if submit_attention.no_evidence or submit_attention.not_satisfied %}
+          <div class="alert warning" style="margin-top:12px">
+            <strong>提交前请留意（不影响提交，但可能被退回）：</strong>
+            {% if submit_attention.no_evidence %}
+            <div style="margin-top:6px">自评为“满足”但未上传佐证材料：{% for item in submit_attention.no_evidence %}<a href="?level={{ item.level }}&item={{ item.id }}" class="code-link">{{ item.code }}</a>{% endfor %}</div>
+            {% endif %}
+            {% if submit_attention.not_satisfied %}
+            <div style="margin-top:6px">自评为“不满足”，该级可能无法审核通过：{% for item in submit_attention.not_satisfied %}<a href="?level={{ item.level }}&item={{ item.id }}" class="code-link">{{ item.code }}</a>{% endfor %}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          <label class="check-line" style="margin-top:16px">
+            <input type="checkbox" name="confirm" value="1" required>
+            <span>我确认所填写的自评内容与上传的佐证材料真实、准确。</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>再检查一下</button>
+          <button class="btn primary" type="submit" {% if not default_submit %}disabled{% endif %}>确认提交</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理员：审核通过 ---- #}
+  {% if is_admin and pass_plan %}
+  <div class="modal-backdrop" id="pass-modal" role="dialog" aria-modal="true" aria-labelledby="pass-title">
+    <div class="modal">
+      <div class="modal-head"><h3 id="pass-title">审核通过 · {{ sys.name }}评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'evaluations:pass_levels' project.id sys.code %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="mt-0">须从第 {{ pass_plan.0 }} 级起按顺序通过。可逐级通过，也可一次通过至已提交的最高级别：</p>
+          <div class="option-list">
+            {% for level in pass_plan %}
+            <label class="option">
+              <input type="radio" name="up_to" value="{{ level }}" {% if forloop.last %}checked{% endif %} required>
+              <span class="t">通过至第 {{ level }} 级</span>
+              <span class="d">本次通过：第 {{ pass_plan.0 }}{% if level != pass_plan.0 %}~{{ level }}{% endif %} 级</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% if review_attention.not_satisfied %}
+          <div class="alert warning" style="margin-top:12px">
+            待审核级别中有 {{ review_attention.not_satisfied|length }} 条自评为“不满足”：{% for item in review_attention.not_satisfied %}<a href="?level={{ item.level }}&item={{ item.id }}" class="code-link">{{ item.code }}</a>{% endfor %}
+          </div>
+          {% endif %}
+          <p class="small muted">通过后该级内容冻结，逐条审核意见一并清除（历史保留在审计日志）。系统不做自动达标判断。</p>
+          <label class="check-line">
+            <input type="checkbox" name="confirm" value="1" required>
+            <span>我已核查所选级别的自评内容与佐证材料。</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认审核通过</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理员：退回修改 ---- #}
+  {% if is_admin and returnable %}
+  <div class="modal-backdrop" id="return-modal" role="dialog" aria-modal="true" aria-labelledby="return-title">
+    <div class="modal">
+      <div class="modal-head"><h3 id="return-title">退回修改 · {{ sys.name }}评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'evaluations:return_levels' project.id sys.code %}">
+        {% csrf_token %}
+        <div class="modal-body form-grid">
+          <div class="field">
+            <label class="field-label">退回的级别 *（可多选）</label>
+            <div class="check-grid">
+              {% for r in returnable %}
+              <label class="check-line"><input type="checkbox" name="levels" value="{{ r.level }}" {% if r.level == view_level and r.label == '已提交' %}checked{% endif %}><span>第 {{ r.level }} 级 <span class="small muted">（{{ r.label }}）</span></span></label>
+              {% endfor %}
+            </div>
+            <div class="hint">退回“已通过”的级别会使已通过等级回退，需企业重新提交并审核。</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="return-comment">审核意见 *（企业可见）</label>
+            <textarea class="input" id="return-comment" name="comment" rows="4" required placeholder="说明需要修改的内容，例如：第 3 级第 2 条缺少第三方检测报告，请补充后重新提交。"></textarea>
+            <div class="hint">针对具体条目的意见，可在条目弹窗中填写“逐条审核意见”，企业会在对应条目看到。</div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认退回</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理员：重新开放 ---- #}
+  {% if is_admin and assessment.status == 'reported' %}
+  <div class="modal-backdrop" id="reopen-modal" role="dialog" aria-modal="true">
+    <div class="modal narrow">
+      <div class="modal-head"><h3>重新开放评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body"><p class="mt-0 mb-0">重新开放后，可对已通过的级别执行退回，让企业修改后重新提交；已生成的报告版本保留。确认重新开放「{{ project.name }}」的{{ sys.name }}评价？</p></div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'evaluations:reopen' project.id sys.code %}">{% csrf_token %}<button class="btn primary" type="submit">确认重新开放</button></form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}

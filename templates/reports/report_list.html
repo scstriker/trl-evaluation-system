@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}评价报告{% endblock %}
+{% block header_title %}评价报告{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>评价报告</h1>
+      <div class="sub">
+        {% if is_admin %}全部已出具的评价报告版本，以及已审核通过、等待出具报告的评价。报告支持技术就绪度、制造成熟度和两者综合三种类型。
+        {% else %}评价机构出具的评价报告可在此下载。报告支持技术就绪度、制造成熟度和两者综合三种类型。{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if waiting %}
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-head"><h2>{% if is_admin %}待出具报告{% else %}已通过审核，等待出具报告{% endif %}</h2><span class="tag {% if is_admin %}warning{% else %}info{% endif %}">{{ waiting|length }} 个</span></div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>技术项目</th>{% if is_admin %}<th>委托单位</th>{% endif %}<th>评价类别</th><th class="num">目标等级</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for a in waiting %}
+          <tr>
+            <td><strong>{{ a.project.name }}</strong></td>
+            {% if is_admin %}<td>{{ a.project.applicant }}</td>{% endif %}
+            <td>{{ a.sys.name }}评价</td>
+            <td class="num"><span class="tag brand">{{ a.sys.abbr }} {{ a.target_level }}</span></td>
+            <td class="nowrap"><a class="btn {% if is_admin %}primary{% else %}secondary{% endif %} sm" href="{% url 'reports:report_preview' a.project.id %}">{% if is_admin %}去生成报告{% else %}预览{% endif %}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head"><h2>已出具的报告</h2><span class="small muted">共 {{ reports|length }} 个版本</span></div>
+    {% if reports %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>技术项目</th>{% if is_admin %}<th>委托单位</th>{% endif %}<th>报告类型</th><th class="num">版本</th><th>报告编号</th><th class="num">达成等级</th><th class="nowrap">出具时间</th><th class="nowrap">操作</th></tr>
+        </thead>
+        <tbody>
+          {% for r in reports %}
+          <tr>
+            <td><a href="{% url 'reports:report_preview' r.project.id %}?type={{ r.report_type }}"><strong>{{ r.project.name }}</strong></a></td>
+            {% if is_admin %}<td>{{ r.project.applicant }}</td>{% endif %}
+            <td class="nowrap">{{ r.get_report_type_display }}</td>
+            <td class="num"><span class="tag brand">V{{ r.version }}</span></td>
+            <td class="mono small">{{ r.report_no }}</td>
+            <td class="num nowrap">{{ r.level_display }}</td>
+            <td class="nowrap">{{ r.generated_at|date:"Y-m-d H:i" }}</td>
+            <td class="nowrap">
+              <a class="btn secondary sm" href="{% url 'reports:download_report' r.id %}">下载 Word</a>
+              <a class="btn ghost sm" href="{% url 'reports:report_preview' r.project.id %}?type={{ r.report_type }}">预览</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="big">尚未出具评价报告</div>
+      <p>评价的目标等级及以下各级全部审核通过后，由评价机构生成评价报告。</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

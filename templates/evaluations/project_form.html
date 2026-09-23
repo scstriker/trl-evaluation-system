@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}新建评价项目 — TRL 评价系统{% endblock %}
-{% block header_title %}新建评价项目{% endblock %}
+{% block title %}申报评价项目{% endblock %}
+{% block header_title %}申报评价项目{% endblock %}
 
 {% block content %}
 <div class="page">
   <div class="page-head">
     <div>
-      <h1>新建评价项目</h1>
-      <div class="sub">提交后，系统按所选评价轨道从《评价细则》物化全部核验条目，条目快照与规则库解耦、历史可溯。</div>
+      <h1>申报评价项目</h1>
+      <div class="sub">填写技术项目信息并选择评价内容。提交后，系统按所选技术类型和目标等级生成逐级自评条目。</div>
     </div>
-    <div class="actions"><a class="btn ghost" href="{% url 'evaluations:project_list' %}">← 返回工作台</a></div>
+    <div class="actions"><a class="btn ghost" href="{% if active_nav == 'mrl' %}{% url 'evaluations:mrl_list' %}{% else %}{% url 'evaluations:trl_list' %}{% endif %}">← 返回项目列表</a></div>
   </div>
 
   <form method="post" novalidate>
     {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert danger" style="margin-bottom:16px">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
     <div class="card">
       <div class="card-head"><h2>申报基本信息</h2></div>
       <div class="card-body form-grid">
-        {% if form.non_field_errors %}<div class="field"><div class="error">{{ form.non_field_errors|join:"；" }}</div></div>{% endif %}
         <div class="field">
           <label class="field-label" for="{{ form.name.id_for_label }}">技术项目名称 *</label>
           {{ form.name }}
@@ -25,14 +25,13 @@
         </div>
         <div class="grid-2">
           <div class="field">
-            <label class="field-label" for="{{ form.applicant.id_for_label }}">委托（受评）单位 *</label>
-            {{ form.applicant }}
-            {% if form.applicant.errors %}<div class="error">{{ form.applicant.errors|join:"；" }}</div>{% endif %}
+            <label class="field-label">委托（受评）单位</label>
+            <input class="input" type="text" value="{{ applicant }}" disabled>
+            <div class="hint">取自注册时填写的企业全称</div>
           </div>
           <div class="field">
-            <label class="field-label" for="{{ form.issuer.id_for_label }}">评价出具单位</label>
-            {{ form.issuer }}
-            <div class="hint">权威第三方评价机构，默认为仪综所全称</div>
+            <label class="field-label">评价出具单位</label>
+            <input class="input" type="text" value="{{ issuer_name }}" disabled>
           </div>
         </div>
         <div class="field">
@@ -43,51 +42,68 @@
     </div>
 
     <div class="card">
-      <div class="card-head"><h2>评价轨道</h2><span class="small muted">轨道决定物化的核验细则范围</span></div>
+      <div class="card-head"><h2>技术类型</h2></div>
       <div class="card-body">
-        {% if form.track.errors %}<div class="error" style="margin-bottom:12px">{{ form.track.errors|join:"；" }}</div>{% endif %}
+        {% if form.tech_type.errors %}<div class="error" style="margin-bottom:12px">{{ form.tech_type.errors|join:"；" }}</div>{% endif %}
         <div class="choice-grid cols-3">
+          {% for value, label in form.fields.tech_type.choices %}
           <label class="choice-card">
-            <input type="radio" name="track" value="equipment" {% if form.track.value == 'equipment' or not form.track.value %}checked{% endif %}>
-            <span class="t">设备技术（包括软件和硬件）</span>
-            <span class="d">硬件与软件细则全覆盖，共 {{ track_counts.equipment }} 项核验条目</span>
+            <input type="radio" name="tech_type" value="{{ value }}" {% if form.tech_type.value == value %}checked{% endif %}>
+            <span class="t">{{ label }}</span>
           </label>
-          <label class="choice-card">
-            <input type="radio" name="track" value="hardware" {% if form.track.value == 'hardware' %}checked{% endif %}>
-            <span class="t">一般硬件产品技术</span>
-            <span class="d">仅硬件轨细则，共 {{ track_counts.hardware }} 项核验条目</span>
-          </label>
-          <label class="choice-card">
-            <input type="radio" name="track" value="software" {% if form.track.value == 'software' %}checked{% endif %}>
-            <span class="t">计算机软件技术</span>
-            <span class="d">仅软件轨细则，共 {{ track_counts.software }} 项核验条目</span>
-          </label>
+          {% endfor %}
         </div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-head"><h2>目标就绪度等级</h2><span class="small muted">评价须从 TRL 1 起逐级核验至目标等级</span></div>
-      <div class="card-body">
-        {% if form.target_level.errors %}<div class="error" style="margin-bottom:12px">{{ form.target_level.errors|join:"；" }}</div>{% endif %}
-        <div class="choice-grid cols-9">
-          {% for level, definition in level_defs.items %}
-          <label class="choice-card lv" title="{{ definition }}">
-            <input type="radio" name="target_level" value="{{ level }}" {% if form.target_level.value|stringformat:'s' == level|stringformat:'s' %}checked{% elif not form.target_level.value and level == 4 %}checked{% endif %}>
-            <span class="t">TRL {{ level }}</span>
+      <div class="card-head"><h2>评价内容与目标等级</h2><span class="small muted">可同时申报两类评价；评价自第 1 级起逐级审核至目标等级</span></div>
+      <div class="card-body form-grid">
+        <div class="eval-choice">
+          <label class="check-line">
+            <input type="checkbox" name="include_trl" value="on" {% if form.include_trl.value %}checked{% endif %} data-toggle-target="trl-levels">
+            <span><strong>技术就绪度评价（TRL 1~9）</strong><span class="muted small">　依据《技术就绪度评价标准及细则》</span></span>
           </label>
-          {% endfor %}
+          <div id="trl-levels" class="eval-levels">
+            {% if form.trl_target.errors %}<div class="error">{{ form.trl_target.errors|join:"；" }}</div>{% endif %}
+            <div class="choice-grid cols-9">
+              {% for d in trl_defs %}
+              <label class="choice-card lv" title="{{ d.name }}">
+                <input type="radio" name="trl_target" value="{{ d.level }}" {% if form.trl_target.value|stringformat:'s' == d.level|stringformat:'s' %}checked{% endif %}>
+                <span class="t">TRL {{ d.level }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <details class="def-table">
+              <summary>查看技术就绪度等级定义</summary>
+              <table class="data"><tbody>{% for d in trl_defs %}<tr><td class="num" style="width:80px">TRL {{ d.level }}</td><td>{{ d.name }}</td></tr>{% endfor %}</tbody></table>
+            </details>
+          </div>
         </div>
-        <div class="card" style="margin-top:16px">
-          <div class="table-wrap">
-            <table class="data">
-              <thead><tr><th class="num" style="width:80px">等级</th><th>技术就绪度等级定义</th></tr></thead>
-              <tbody>
-                {% for level, definition in level_defs.items %}
-                <tr><td class="num">TRL {{ level }}</td><td>{{ definition }}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+
+        <div class="eval-choice {% if not form.mrl_available %}disabled{% endif %}">
+          <label class="check-line">
+            <input type="checkbox" name="include_mrl" value="on" {% if form.include_mrl.value and form.mrl_available %}checked{% endif %} {% if not form.mrl_available %}disabled{% endif %} data-toggle-target="mrl-levels">
+            <span><strong>制造成熟度评价（MRL 1~10）</strong><span class="muted small">　依据《制造成熟度评价标准及细则》</span></span>
+          </label>
+          {% if not form.mrl_available %}
+          <div class="small muted" style="margin-left:28px">制造成熟度评价细则尚未导入，暂不能申报；导入后可在“MRL评价”中为本项目追加。</div>
+          {% endif %}
+          {% if form.include_mrl.errors %}<div class="error">{{ form.include_mrl.errors|join:"；" }}</div>{% endif %}
+          <div id="mrl-levels" class="eval-levels">
+            {% if form.mrl_target.errors %}<div class="error">{{ form.mrl_target.errors|join:"；" }}</div>{% endif %}
+            <div class="choice-grid cols-10">
+              {% for d in mrl_defs %}
+              <label class="choice-card lv" title="{{ d.name }}">
+                <input type="radio" name="mrl_target" value="{{ d.level }}" {% if form.mrl_target.value|stringformat:'s' == d.level|stringformat:'s' %}checked{% endif %}>
+                <span class="t">MRL {{ d.level }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <details class="def-table">
+              <summary>查看制造成熟度等级定义</summary>
+              <table class="data"><tbody>{% for d in mrl_defs %}<tr><td class="num" style="width:80px">MRL {{ d.level }}</td><td><strong>{{ d.name }}</strong>{% if d.desc %}<div class="small muted">{{ d.desc }}</div>{% endif %}</td></tr>{% endfor %}</tbody></table>
+            </details>
           </div>
         </div>
       </div>
@@ -101,8 +117,8 @@
     </div>
 
     <div class="flex" style="margin-top:24px;justify-content:flex-end">
-      <a class="btn secondary" href="{% url 'evaluations:project_list' %}">取消</a>
-      <button class="btn primary" type="submit">创建评价项目并物化核验条目 →</button>
+      <a class="btn secondary" href="{% url 'evaluations:trl_list' %}">取消</a>
+      <button class="btn primary" type="submit">提交评价申请 →</button>
     </div>
   </form>
 </div>

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ sys.abbr }}评价{% endblock %}
+{% block header_title %}{{ sys.name }}评价{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>{{ sys.name }}（{{ sys.abbr }}）评价</h1>
+      <div class="sub">
+        {% if current_is_admin %}
+        全部企业申报的{{ sys.name }}评价。待审核的项目排在最前，请逐级核查企业自评与佐证材料后审核通过或退回。
+        {% else %}
+        按{{ sys.standard }}逐条自评并上传佐证材料，可逐级提交审核，也可一次提交至目标等级；被退回的级别按审核意见修改后重新提交。
+        {% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      {% if can_create %}
+        {% if rules_ready %}
+        <a class="btn primary" href="{% url 'evaluations:project_create' %}?system={{ sys.code }}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          申报评价项目
+        </a>
+        {% else %}
+        <button class="btn primary" type="button" disabled title="{{ sys.name }}评价细则尚未导入">申报评价项目</button>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not rules_ready %}
+  <div class="alert info" style="margin-bottom:24px">
+    <strong>{{ sys.name }}评价细则尚未导入。</strong>
+    {% if current_is_admin %}
+    请按《{{ sys.name }}评价细则》模板整理细则后导入系统（见“评价流程/细则 → {{ sys.abbr }}评价细则”页的导入说明），导入后企业即可申报{{ sys.name }}评价。
+    {% else %}
+    {{ sys.name }}评价暂未开放申报，如有需要请联系评价机构。
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if rules_ready or rows %}
+  <div class="kpi-row">
+    {% if current_is_admin %}
+    <div class="kpi {% if counters.submitted %}hi{% endif %}"><span class="l">待审核</span><span class="v">{{ counters.submitted }}<small>个</small></span><span class="d">企业已提交，等待核查</span></div>
+    <div class="kpi"><span class="l">已退回待修改</span><span class="v">{{ counters.returned }}<small>个</small></span><span class="d">等待企业按意见修改</span></div>
+    <div class="kpi"><span class="l">待出报告</span><span class="v">{{ counters.ready }}<small>个</small></span><span class="d">已全部通过至目标等级</span></div>
+    <div class="kpi"><span class="l">已出报告</span><span class="v">{{ counters.reported }}<small>个</small></span><span class="d">共 {{ counters.total }} 个{{ sys.name }}评价</span></div>
+    {% else %}
+    <div class="kpi"><span class="l">填写中</span><span class="v">{{ counters.draft }}<small>个</small></span><span class="d">尚有级别未提交</span></div>
+    <div class="kpi {% if counters.returned %}hi{% endif %}"><span class="l">被退回需修改</span><span class="v">{{ counters.returned }}<small>个</small></span><span class="d">请按审核意见修改后重新提交</span></div>
+    <div class="kpi"><span class="l">审核中</span><span class="v">{{ counters.submitted }}<small>个</small></span><span class="d">已提交，等待评价机构审核</span></div>
+    <div class="kpi"><span class="l">已通过 / 已出报告</span><span class="v">{{ counters.ready }} / {{ counters.reported }}</span><span class="d">报告出具后可在“评价报告”下载</span></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head"><h2>{{ sys.name }}评价项目</h2><span class="small muted">共 {{ rows|length }} 个</span></div>
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>技术项目名称</th>
+            {% if current_is_admin %}<th>委托（受评）单位</th>{% endif %}
+            <th>技术类型</th>
+            <th class="num">目标等级</th>
+            <th class="num">已通过</th>
+            <th>自评进度（目标级内）</th>
+            <th>下一步</th>
+            <th class="nowrap">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><a href="{% url 'evaluations:assessment_detail' row.project.id sys.code %}"><strong>{{ row.project.name }}</strong></a>
+              {% if row.project.domain %}<div class="small muted">{{ row.project.domain }}</div>{% endif %}</td>
+            {% if current_is_admin %}<td>{{ row.project.applicant }}</td>{% endif %}
+            <td class="nowrap small">{{ row.project.get_tech_type_display }}</td>
+            <td class="num"><span class="tag brand">{{ sys.abbr }} {{ row.assessment.target_level }}</span></td>
+            <td class="num">{% if row.achieved %}{{ sys.abbr }} {{ row.achieved }}{% else %}—{% endif %}</td>
+            <td>
+              <div class="flex" style="gap:8px;flex-wrap:nowrap">
+                <div class="progress" style="flex:1"><div class="bar" style="width:{{ row.stats.percent }}%"></div></div>
+                <span class="progress-label">{{ row.stats.completed }}/{{ row.stats.total }}</span>
+              </div>
+            </td>
+            <td><span class="tag {{ row.step_tone }}">{{ row.step_text }}</span></td>
+            <td class="nowrap">
+              <a class="btn {% if current_is_admin and row.bucket == 'submitted' or not current_is_admin and row.bucket == 'returned' %}primary{% else %}secondary{% endif %} sm" href="{% url 'evaluations:assessment_detail' row.project.id sys.code %}">
+                {% if current_is_admin %}{% if row.bucket == 'submitted' %}去审核{% else %}查看{% endif %}{% else %}{% if row.bucket == 'returned' %}去修改{% elif row.bucket == 'draft' %}继续填写{% else %}查看{% endif %}{% endif %}
+              </a>
+              <a class="btn ghost sm" href="{% url 'reports:report_preview' row.project.id %}">报告</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="big">暂无{{ sys.name }}评价项目</div>
+      {% if can_create and rules_ready %}
+      <p>点击「申报评价项目」填写技术项目信息、选择技术类型和目标等级，系统将按评价细则生成逐级自评条目。</p>
+      <a class="btn primary" href="{% url 'evaluations:project_create' %}?system={{ sys.code }}">申报评价项目</a>
+      {% elif current_is_admin %}
+      <p>企业申报{{ sys.name }}评价后会显示在这里。</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if without and can_create and rules_ready %}
+  <div class="card">
+    <div class="card-head"><h2>尚未开展{{ sys.name }}评价的项目</h2><span class="small muted">可为已申报的项目追加{{ sys.name }}评价，以便出具综合评价报告</span></div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>技术项目名称</th><th>技术类型</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for project in without %}
+          <tr>
+            <td><strong>{{ project.name }}</strong></td>
+            <td class="small">{{ project.get_tech_type_display }}</td>
+            <td class="nowrap"><a class="btn secondary sm" href="{% url 'evaluations:assessment_detail' project.id sys.code %}">追加{{ sys.name }}评价</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,9 +1,9 @@
-{# 细则判定弹窗：需要上下文 item / project / mutable / level_passed #}
-{% with editable=mutable %}
+{# 条目弹窗：企业自评 / 管理员逐条意见。需要上下文 item / item_editable / can_comment / current_state #}
+{% load ui %}
 <div class="modal-backdrop" id="item-modal-{{ item.id }}" role="dialog" aria-modal="true" aria-labelledby="item-title-{{ item.id }}">
   <div class="modal wide">
     <div class="modal-head">
-      <h3 id="item-title-{{ item.id }}">细则判定 · {{ item.code }}（{{ item.get_track_display }}）</h3>
+      <h3 id="item-title-{{ item.id }}">{% if item_editable %}自评填写{% else %}条目详情{% endif %} · {{ item.code }}（{{ item.get_track_display }}）</h3>
       <button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
     <div class="modal-body">
@@ -14,11 +14,15 @@
         </div>
       </div>
 
-      {% if editable and not level_passed %}
-      <form method="post" action="{% url 'evaluations:item_evaluate' project.id item.id %}" class="form-grid" data-eval-form>
+      {% if item.review_comment %}
+      <div class="alert warning" style="margin-bottom:16px"><strong>评价机构审核意见：</strong>{{ item.review_comment }}</div>
+      {% endif %}
+
+      {% if item_editable %}
+      <form method="post" action="{% url 'evaluations:item_evaluate' item.id %}" class="form-grid" data-eval-form data-dirty-guard>
         {% csrf_token %}
         <div class="field">
-          <label class="field-label">判定结论 *</label>
+          <label class="field-label">自评结论 *</label>
           <div class="choice-grid cols-3">
             <label class="choice-card">
               <input type="radio" name="result" value="satisfied" {% if item.result == 'satisfied' %}checked{% endif %} required>
@@ -27,7 +31,7 @@
             </label>
             <label class="choice-card">
               <input type="radio" name="result" value="not_satisfied" {% if item.result == 'not_satisfied' %}checked{% endif %}>
-              <span class="t" style="color:var(--brand-red)">不满足</span>
+              <span class="t" style="color:var(--warning)">不满足</span>
               <span class="d">存在差距，需说明不满足情况</span>
             </label>
             <label class="choice-card">
@@ -39,38 +43,50 @@
         </div>
         <div class="field">
           <label class="field-label" for="statement-{{ item.id }}">满足情况说明 *</label>
-          <textarea class="input" id="statement-{{ item.id }}" name="statement" rows="4"
+          <textarea class="input" id="statement-{{ item.id }}" name="statement" rows="4" required
             placeholder="结合佐证材料，说明该具体化等级条件的满足情况 / 差距情况 / 不适用理由">{{ item.statement }}</textarea>
-          <div class="hint" data-statement-hint>判定为满足时，请结合佐证材料说明该条件如何被满足。</div>
+          <div class="hint" data-statement-hint>自评为满足时，请结合佐证材料说明该条件如何被满足。</div>
         </div>
         <div class="field">
           <label class="field-label" for="support-{{ item.id }}">评价支撑信息（写入报告）</label>
           <textarea class="input" id="support-{{ item.id }}" name="support_info" rows="2"
             placeholder="例如：《项目任务书》、发明专利《一种……监测仪》、《软件测试报告》">{{ item.support_info }}</textarea>
-          <div class="hint">留空时，报告将自动引用本条挂载的佐证材料文件名</div>
+          <div class="hint">留空时，报告将自动引用本条上传的佐证材料文件名</div>
         </div>
         <div class="flex" style="justify-content:flex-end">
           <button class="btn secondary" type="button" data-modal-close>取消</button>
-          <button class="btn primary" type="submit">保存判定结论</button>
+          <button class="btn primary" type="submit">保存自评</button>
         </div>
       </form>
       {% else %}
       <div class="form-grid">
         <div class="field">
-          <label class="field-label">判定结论</label>
+          <label class="field-label">自评结论</label>
           {% if item.result == 'satisfied' %}<span class="tag success">满足</span>
-          {% elif item.result == 'not_satisfied' %}<span class="tag danger">不满足</span>
+          {% elif item.result == 'not_satisfied' %}<span class="tag warning">不满足</span>
           {% elif item.result == 'not_applicable' %}<span class="tag neutral">不适用</span>
-          {% else %}<span class="tag warning">未判定</span>{% endif %}
-          {% if level_passed %}<span class="small muted">（本级已审核通过，结论冻结）</span>{% endif %}
+          {% else %}<span class="tag outline">未填写</span>{% endif %}
+          {% if current_state.state == 'passed' %}<span class="small muted">（本级已审核通过，内容冻结）</span>
+          {% elif current_state.state == 'submitted' %}<span class="small muted">（本级已提交，等待审核）</span>{% endif %}
         </div>
-        {% if item.statement %}<div class="field"><label class="field-label">满足情况说明</label><p class="mt-0 mb-0">{{ item.statement }}</p></div>{% endif %}
-        {% if item.support_info %}<div class="field"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0">{{ item.support_info }}</p></div>{% endif %}
+        {% if item.statement %}<div class="field"><label class="field-label">满足情况说明</label><p class="mt-0 mb-0 prewrap">{{ item.statement }}</p></div>{% endif %}
+        {% if item.support_info %}<div class="field"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0 prewrap">{{ item.support_info }}</p></div>{% endif %}
       </div>
       {% endif %}
 
       {% if item.evaluated_by %}
-      <p class="small muted">最近判定：{{ item.evaluated_by.username }} · {{ item.evaluated_at|date:"Y-m-d H:i" }}</p>
+      <p class="small muted">最近填写：{{ item.evaluated_by|who }} · {{ item.evaluated_at|date:"Y-m-d H:i" }}</p>
+      {% endif %}
+
+      {% if can_comment %}
+      <form method="post" action="{% url 'evaluations:item_review_comment' item.id %}" class="form-grid comment-box" data-dirty-guard>
+        {% csrf_token %}
+        <div class="field">
+          <label class="field-label" for="rc-{{ item.id }}">逐条审核意见（企业可见，退回后企业据此修改）</label>
+          <textarea class="input" id="rc-{{ item.id }}" name="review_comment" rows="2" placeholder="例如：请补充第三方检测报告原件扫描件">{{ item.review_comment }}</textarea>
+        </div>
+        <div class="flex" style="justify-content:flex-end"><button class="btn secondary sm" type="submit">保存审核意见</button></div>
+      </form>
       {% endif %}
 
       <div class="section-title" style="font-size:15px;margin-top:24px">佐证材料（{{ item.active_evidence_count }}）</div>
@@ -80,20 +96,20 @@
           <div class="evd-item">
             <svg class="icon sm" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg>
             <span class="fn">{{ evidence.original_filename }}{% if evidence.description %} <span class="muted">— {{ evidence.description }}</span>{% endif %}</span>
-            <span class="meta">{{ evidence.size_display }} · {{ evidence.uploaded_by.username }} · {{ evidence.uploaded_at|date:"m-d H:i" }}</span>
+            <span class="meta">{{ evidence.size_display }} · {{ evidence.uploaded_at|date:"m-d H:i" }}</span>
             <span class="hash" title="SHA-256：{{ evidence.sha256 }}">{{ evidence.sha256|slice:":12" }}…</span>
             <a class="btn ghost sm" href="{% url 'evidence:download' evidence.id %}">下载</a>
-            {% if editable and not level_passed %}
-            <button class="btn ghost sm" type="button" data-modal-open="evd-del-{{ evidence.id }}" style="color:var(--brand-red)">删除</button>
+            {% if item_editable %}
+            <button class="btn ghost sm" type="button" data-modal-open="evd-del-{{ evidence.id }}">删除</button>
             {% endif %}
           </div>
           {% endif %}
         {% empty %}
-        <p class="small muted mt-0 mb-0">尚未挂载佐证材料。</p>
+        <p class="small muted mt-0 mb-0">尚未上传佐证材料。</p>
         {% endfor %}
       </div>
 
-      {% if editable and not level_passed %}
+      {% if item_editable %}
       <form method="post" action="{% url 'evidence:upload' item.id %}" enctype="multipart/form-data" class="flex" style="margin-top:12px;align-items:flex-end">
         {% csrf_token %}
         <div class="field" style="flex:1;min-width:200px">
@@ -108,15 +124,16 @@
           <svg class="icon sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> 上传
         </button>
       </form>
+      <p class="small muted" style="margin-top:6px">上传前请先保存自评内容，上传会刷新页面。</p>
       {% endif %}
 
       {% if item.history %}
-      <div class="section-title" style="font-size:15px;margin-top:24px">判定痕迹（审计留痕）</div>
+      <div class="section-title" style="font-size:15px;margin-top:24px">填写与审核记录</div>
       <div class="audit-history">
         {% for log in item.history %}
-        <div>{{ log.created_at|date:"Y-m-d H:i" }} · {{ log.actor.username|default:"系统" }} ·
-          {% if log.after.result == 'satisfied' %}判定为「满足」{% elif log.after.result == 'not_satisfied' %}判定为「不满足」{% elif log.after.result == 'not_applicable' %}判定为「不适用」{% else %}{{ log.action }}{% endif %}
-          {% if log.before.result and log.before.result != 'unevaluated' and log.before.result != log.after.result %}（原：{{ log.before.result }}）{% endif %}
+        <div>{{ log.created_at|date:"Y-m-d H:i" }} · {{ log.actor|who }} ·
+          {% if log.action == 'item.review' %}审核意见：{{ log.after.review_comment|default:"（已清除）" }}
+          {% elif log.after.result == 'satisfied' %}自评为「满足」{% elif log.after.result == 'not_satisfied' %}自评为「不满足」{% elif log.after.result == 'not_applicable' %}自评为「不适用」{% else %}{{ log.action }}{% endif %}
         </div>
         {% endfor %}
       </div>
@@ -126,12 +143,12 @@
 </div>
 
 {# 佐证删除确认弹窗 #}
-{% if editable and not level_passed %}
+{% if item_editable %}
 {% for evidence in item.evidence_files.all %}{% if not evidence.is_deleted %}
 <div class="modal-backdrop" id="evd-del-{{ evidence.id }}" role="dialog" aria-modal="true">
   <div class="modal narrow">
     <div class="modal-head"><h3>删除佐证材料</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
-    <div class="modal-body"><p class="mt-0 mb-0">确认删除「{{ evidence.original_filename }}」？系统执行软删除并保留审计痕迹，文件不会被物理清除。</p></div>
+    <div class="modal-body"><p class="mt-0 mb-0">确认删除「{{ evidence.original_filename }}」？删除后报告不再引用该文件，系统保留删除记录。</p></div>
     <div class="modal-foot">
       <button class="btn secondary" type="button" data-modal-close>取消</button>
       <form method="post" action="{% url 'evidence:delete' evidence.id %}">{% csrf_token %}<button class="btn danger" type="submit">确认删除</button></form>
@@ -140,4 +157,3 @@
 </div>
 {% endif %}{% endfor %}
 {% endif %}
-{% endwith %}

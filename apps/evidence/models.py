@@ -8,7 +8,7 @@ from django.utils.text import get_valid_filename
 
 def evidence_upload_path(instance, filename):
     safe_name = get_valid_filename(instance.stored_filename or filename)
-    return f"evidence/{instance.check_item.project_id}/{instance.check_item_id}/{safe_name}"
+    return f"evidence/{instance.check_item.assessment.project_id}/{instance.check_item_id}/{safe_name}"
 
 
 class EvidenceFile(models.Model):

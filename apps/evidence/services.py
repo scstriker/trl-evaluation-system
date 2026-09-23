@@ -9,19 +9,10 @@ from django.utils import timezone
 from django.utils.text import get_valid_filename
 
 from apps.audit.models import AuditLog
-from apps.evaluations.models import EvaluationProject
+from apps.evaluations.services import ensure_item_editable
 from apps.evidence.models import EvidenceFile
 
 ALLOWED_EXTENSIONS = {".doc", ".docx", ".pdf", ".jpg", ".jpeg", ".png", ".webp"}
-
-
-def _ensure_project_is_mutable(project, purpose):
-    if project.status == EvaluationProject.STATUS_ARCHIVED:
-        raise ValidationError(f"当前项目已归档，不能{purpose}。")
-    if project.status == EvaluationProject.STATUS_LOCKED:
-        raise ValidationError(f"当前项目已锁定，不能{purpose}。")
-    if project.status == EvaluationProject.STATUS_REPORTED:
-        raise ValidationError(f"当前项目已生成报告，不能{purpose}。")
 
 
 def _uploaded_file_sha256(uploaded_file):
@@ -43,7 +34,7 @@ def _validate_uploaded_file(uploaded_file):
 
 @transaction.atomic
 def upload_evidence_file(check_item, actor, uploaded_file, description=""):
-    _ensure_project_is_mutable(check_item.project, "上传佐证材料")
+    ensure_item_editable(check_item, "上传佐证材料")
     _validate_uploaded_file(uploaded_file)
 
     original_filename = uploaded_file.name
@@ -76,7 +67,7 @@ def upload_evidence_file(check_item, actor, uploaded_file, description=""):
 
 @transaction.atomic
 def soft_delete_evidence(evidence, actor):
-    _ensure_project_is_mutable(evidence.check_item.project, "删除佐证材料")
+    ensure_item_editable(evidence.check_item, "删除佐证材料")
     if evidence.is_deleted:
         raise ValidationError("佐证材料已删除，不能重复删除。")
     before = {"is_deleted": evidence.is_deleted}

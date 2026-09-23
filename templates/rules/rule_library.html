@@ -1,58 +1,72 @@
 {% extends "base.html" %}
-{% block title %}评价细则库 — TRL 评价系统{% endblock %}
-{% block header_title %}评价细则库{% endblock %}
+{% block title %}{{ sys.name }}评价细则{% endblock %}
+{% block header_title %}评价细则{% endblock %}
 
 {% block content %}
 <div class="page page-wide">
   <div class="page-head">
     <div>
-      <h1>评价细则库</h1>
-      <div class="sub">《技术就绪度评价标准及细则》全量规则：TRL 1~9 级定义与 {{ total_items }} 条具体化等级条件（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）。项目创建时按轨道从本库物化条目快照。</div>
+      <h1>{{ sys.name }}（{{ sys.abbr }}）评价细则</h1>
+      <div class="sub">{{ sys.standard }}：{{ sys.abbr }} 1~{{ sys.max_level }} 级定义与 {{ total_items }} 条具体化等级条件{% if has_tracks %}（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）{% endif %}。企业申报时按本细则生成自评条目；细则修订不影响已申报的项目。本页仅评价机构管理员可见。</div>
     </div>
+    {% if total_items %}
     <div class="actions">
+      {% if has_tracks %}
       <select id="rule-track-filter" class="input" style="width:auto">
-        <option value="">全部轨别</option>
+        <option value="">全部类别</option>
         <option value="hw">仅硬件</option>
         <option value="sw">仅软件</option>
       </select>
+      {% endif %}
       <input type="text" id="rule-filter" class="input" style="width:240px" placeholder="搜索条款内容 / 佐证信息…">
     </div>
+    {% endif %}
   </div>
+  {% include "rules/_rules_tabs.html" %}
+
+  {% if not total_items %}
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-head"><h2>{{ sys.name }}评价细则尚未导入</h2><span class="tag warning">待导入</span></div>
+    <div class="card-body">
+      <p class="mt-0">当前仅有 {{ sys.abbr }} 1~{{ sys.max_level }} 级的等级定义，尚无逐条的具体化等级条件，企业暂不能申报{{ sys.name }}评价。导入步骤：</p>
+      <ol class="steps-list">
+        <li>按模板 <span class="mono">data/templates/制造成熟度评价细则-模板.xlsx</span> 整理细则：每级一行“第 N 级 + 等级定义”，其下逐条填写序号、具体化等级条件、评价支撑信息。</li>
+        <li>在程序目录执行 <span class="mono">python scripts/build_seed.py mrl &lt;细则文件.xlsx&gt;</span>，生成 <span class="mono">data/seed/mrl_rules_seed.csv</span>。</li>
+        <li>执行 <span class="mono">python manage.py import_rules</span> 导入系统，刷新本页即可看到全部细则。</li>
+      </ol>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="kpi-row">
-    <div class="kpi"><span class="l">就绪度等级</span><span class="v">9<small>级</small></span><span class="d">TRL 1 ~ TRL 9</span></div>
-    <div class="kpi hi"><span class="l">细则条目总数</span><span class="v">{{ total_items }}<small>条</small></span><span class="d">具体化等级条件</span></div>
-    <div class="kpi"><span class="l">硬件轨细则</span><span class="v">{{ hw_total }}<small>条</small></span><span class="d">一般硬件产品技术适用</span></div>
-    <div class="kpi"><span class="l">软件轨细则</span><span class="v">{{ sw_total }}<small>条</small></span><span class="d">计算机软件技术适用</span></div>
+    <div class="kpi"><span class="l">等级</span><span class="v">{{ sys.max_level }}<small>级</small></span><span class="d">{{ sys.abbr }} 1 ~ {{ sys.abbr }} {{ sys.max_level }}</span></div>
+    <div class="kpi"><span class="l">细则条目总数</span><span class="v">{{ total_items }}<small>条</small></span><span class="d">具体化等级条件</span></div>
+    {% if has_tracks %}
+    <div class="kpi"><span class="l">硬件细则</span><span class="v">{{ hw_total }}<small>条</small></span><span class="d">设备技术、一般硬件产品技术适用</span></div>
+    <div class="kpi"><span class="l">软件细则</span><span class="v">{{ sw_total }}<small>条</small></span><span class="d">设备技术、计算机软件技术适用</span></div>
+    {% endif %}
   </div>
 
   {% for entry in levels %}
-  <details class="rule-level" {% if forloop.first %}open{% endif %}>
+  <details class="rule-level" {% if forloop.first and total_items %}open{% endif %}>
     <summary>
-      <span class="no">{{ entry.level.level }}</span>
-      <span class="def">{{ entry.level.name }}</span>
-      <span class="cnt">硬件 {{ entry.hw_items|length }} 条 · 软件 {{ entry.sw_items|length }} 条</span>
+      <span class="no">{{ entry.definition.level }}</span>
+      <span class="def">{{ entry.definition.name }}{% if entry.definition.desc %}<span class="small muted" style="display:block;font-weight:400">{{ entry.definition.desc }}</span>{% endif %}</span>
+      <span class="cnt">{% if has_tracks %}硬件 {{ entry.hw_count }} 条 · 软件 {{ entry.sw_count }} 条{% else %}{{ entry.items|length }} 条{% endif %}</span>
       <span class="chev">▸</span>
     </summary>
     <div class="rule-body">
+      {% if entry.items %}
       <div class="table-wrap">
         <table class="data">
           <thead>
-            <tr><th class="num" style="width:60px">序号</th><th style="width:80px">适用</th><th>具体化等级条件</th><th style="width:220px">评价支撑信息</th></tr>
+            <tr><th class="num" style="width:60px">序号</th>{% if has_tracks %}<th style="width:80px">适用</th>{% endif %}<th>具体化等级条件</th><th style="width:220px">评价支撑信息</th></tr>
           </thead>
           <tbody>
-            {% for item in entry.hw_items %}
-            <tr data-rule-row data-track="hw" data-text="{{ item.name|lower }} {{ item.evidence|lower }}">
+            {% for item in entry.items %}
+            <tr data-rule-row data-track="{{ item.track }}" data-text="{{ item.name|lower }} {{ item.evidence|lower }}">
               <td class="num">{{ item.seq }}</td>
-              <td><span class="tag info">硬件</span></td>
-              <td>{{ item.name }}</td>
-              <td class="muted">{{ item.evidence }}</td>
-            </tr>
-            {% endfor %}
-            {% for item in entry.sw_items %}
-            <tr data-rule-row data-track="sw" data-text="{{ item.name|lower }} {{ item.evidence|lower }}">
-              <td class="num">{{ item.seq }}</td>
-              <td><span class="tag neutral">软件</span></td>
+              {% if has_tracks %}<td><span class="tag {% if item.track == 'hw' %}info{% else %}neutral{% endif %}">{{ item.get_track_display }}</span></td>{% endif %}
               <td>{{ item.name }}</td>
               <td class="muted">{{ item.evidence }}</td>
             </tr>
@@ -60,6 +74,9 @@
           </tbody>
         </table>
       </div>
+      {% else %}
+      <p class="small muted mt-0 mb-0">本级细则尚未导入。</p>
+      {% endif %}
     </div>
   </details>
   {% endfor %}
