@@ -49,3 +49,37 @@ class Report(models.Model):
         if self.mrl_level is not None:
             parts.append(f"MRL {self.mrl_level}")
         return " / ".join(parts)
+
+
+class ReportRequest(models.Model):
+    """报告导出申请：企业申请，评价机构审核通过时生成报告，企业随后才能下载和打印。"""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "待审核"),
+        (STATUS_APPROVED, "已通过"),
+        (STATUS_REJECTED, "已驳回"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey("evaluations.EvaluationProject", on_delete=models.CASCADE, related_name="report_requests")
+    report_type = models.CharField("报告类型", max_length=16, choices=Report.TYPE_CHOICES)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="report_requests"
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="reviewed_report_requests"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.CharField("驳回原因", max_length=255, blank=True)
+    report = models.ForeignKey(Report, null=True, blank=True, on_delete=models.SET_NULL, related_name="requests")
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return f"{self.project.name} {self.get_report_type_display()} {self.get_status_display()}"

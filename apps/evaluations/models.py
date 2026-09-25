@@ -25,7 +25,7 @@ class EvaluationProject(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField("技术项目名称", max_length=255)
     applicant = models.CharField("委托（受评）单位", max_length=255)
-    issuer = models.CharField("评价出具单位", max_length=255, default=DEFAULT_ISSUER)
+    issuer = models.CharField("评价报告出具单位", max_length=255, default=DEFAULT_ISSUER)
     domain = models.CharField("应用领域", max_length=255, blank=True)
     tech_type = models.CharField("技术类型", max_length=32, choices=TECH_TYPE_CHOICES)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="projects")
@@ -193,18 +193,62 @@ class LevelReview(models.Model):
 
 
 class EvaluationTeamMember(models.Model):
-    """报告“评价人员”表：由管理员按项目填写。"""
+    """报告“评价人员”表：自评估工作组由企业填写，第三方评价组由评价机构填写。"""
+
+    GROUP_SELF = "self"
+    GROUP_THIRD = "third"
+    GROUP_CHOICES = [
+        (GROUP_SELF, "自评估工作组"),
+        (GROUP_THIRD, "第三方评价组"),
+    ]
 
     project = models.ForeignKey(EvaluationProject, on_delete=models.CASCADE, related_name="team_members")
+    group = models.CharField("所属组", max_length=8, choices=GROUP_CHOICES, default=GROUP_THIRD)
     order = models.PositiveSmallIntegerField(default=0)
     role = models.CharField("角色", max_length=32)
     name = models.CharField("姓名", max_length=64)
-    title = models.CharField("职称", max_length=64, blank=True)
+    title = models.CharField("职务 / 职称", max_length=64, blank=True)
     specialty = models.CharField("专业及特长", max_length=128, blank=True)
     org = models.CharField("工作单位", max_length=255, blank=True)
 
     class Meta:
-        ordering = ["project", "order", "id"]
+        ordering = ["project", "group", "order", "id"]
 
     def __str__(self):
-        return f"{self.role} {self.name}"
+        return f"{self.get_group_display()} {self.role} {self.name}"
+
+
+class TargetChangeRequest(models.Model):
+    """目标等级调整申请：企业提出，评价机构审核通过后生效。"""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "待审核"),
+        (STATUS_APPROVED, "已通过"),
+        (STATUS_REJECTED, "已驳回"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assessment = models.ForeignKey(Assessment, on_delete=models.CASCADE, related_name="target_requests")
+    from_level = models.PositiveSmallIntegerField("原目标等级")
+    to_level = models.PositiveSmallIntegerField("申请目标等级")
+    reason = models.TextField("调整理由")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="target_requests"
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="reviewed_target_requests"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.CharField("驳回原因", max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        abbr = self.assessment.sys.abbr
+        return f"{self.assessment} {abbr} {self.from_level} → {abbr} {self.to_level}"

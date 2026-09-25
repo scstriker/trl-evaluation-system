@@ -17,12 +17,12 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from apps.accounts.permissions import can_generate_report, display_name
+from apps.accounts.permissions import can_generate_report, display_name, is_project_owner
 from apps.audit.models import AuditLog
-from apps.evaluations.models import Assessment, CheckItem
-from apps.evaluations.services import get_achieved_level, get_reviews
+from apps.evaluations.models import Assessment, CheckItem, EvaluationTeamMember
+from apps.evaluations.services import get_achieved_level, get_reviews, mrl_enabled
 from apps.evidence.models import EvidenceFile
-from apps.reports.models import Report
+from apps.reports.models import Report, ReportRequest
 from apps.rules.models import LevelDefinition
 from apps.rules.systems import MRL, TRL, get_system
 
@@ -42,6 +42,24 @@ TYPE_SYSTEMS = {
 TYPE_SUFFIX = {Report.TYPE_TRL: "TRL", Report.TYPE_MRL: "MRL", Report.TYPE_COMBINED: "ZH"}
 
 TYPE_TITLES = dict(Report.TYPE_CHOICES)
+
+TEAM_HEADERS = ["角色", "姓名", "职务 / 职称", "专业及特长", "工作单位"]
+TEAM_WIDTHS = [1.6, 2.0, 2.6, 4.4, 5.4]
+
+
+def enabled_report_types():
+    """制造成熟度未开放时，只提供技术就绪度评价报告。"""
+    if mrl_enabled():
+        return [key for key, _ in Report.TYPE_CHOICES]
+    return [Report.TYPE_TRL]
+
+
+def team_groups(project):
+    members = list(project.team_members.all())
+    return [
+        (label, [m for m in members if m.group == group])
+        for group, label in EvaluationTeamMember.GROUP_CHOICES
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +131,7 @@ def build_report(project, report_type):
     parts = [_assessment_part(assessments[system]) for system in systems if system in assessments]
     if not parts:
         raise ValidationError("该项目没有可用于此类报告的评价。")
-    team = list(project.team_members.all())
+    team = team_groups(project)
     evidence_files = list(
         EvidenceFile.objects.filter(check_item__assessment__in=[part["assessment"] for part in parts], is_deleted=False)
         .select_related("check_item__assessment")
@@ -233,7 +251,7 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
     info_rows = [
         ["技术项目名称", project.name],
         ["委托（受评）单位", project.applicant],
-        ["评价出具单位", project.issuer],
+        ["评价报告出具单位", project.issuer],
         ["应用领域", project.domain or "—"],
         ["技术类型", project.get_tech_type_display()],
     ]
@@ -265,10 +283,19 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
         {"kind": "table", "headers": ["标准编号", "标准名称"], "rows": _basis(parts), "widths": [4.0, 12.0]},
         {"kind": "h2", "text": "2.3 评价人员"},
         {
-            "kind": "table",
-            "headers": ["角色", "姓名", "职称", "专业及特长", "工作单位"],
-            "rows": [[m.role, m.name, m.title, m.specialty, m.org] for m in team] or [["—", "（待填写）", "", "", ""]],
-            "widths": [1.6, 2.0, 2.6, 4.4, 5.4],
+            "kind": "p",
+            "text": f"{project.applicant}委托{project.issuer}开展{names}评价，成立了自评估工作组和第三方评价组，"
+            "各组成员信息见下表。",
+        },
+        {"kind": "caption", "text": "评价组成员组成"},
+        {
+            "kind": "team",
+            "headers": TEAM_HEADERS,
+            "widths": TEAM_WIDTHS,
+            "groups": [
+                (label, [[m.role, m.name, m.title, m.specialty, m.org] for m in members] or [["—", "（待填写）", "", "", ""]])
+                for label, members in team
+            ],
         },
         {"kind": "h2", "text": "2.4 评价过程"},
         {
@@ -336,11 +363,26 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
 # ---------------------------------------------------------------------------
 
 
+def _has_team(project, group):
+    return project.team_members.filter(group=group).exists()
+
+
+SELF_TEAM_MISSING = "自评估工作组成员尚未填写（由企业在“编辑报告信息”中填写）"
+THIRD_TEAM_MISSING = "第三方评价组成员尚未填写（由评价机构在“编辑报告信息”中填写）"
+
+
+def request_blockers(project, report_type):
+    """企业申请导出前需满足：评价达到目标等级、自评估工作组已填写。"""
+    blockers = list(report_availability(project)[report_type]["reasons"])
+    if not _has_team(project, EvaluationTeamMember.GROUP_SELF):
+        blockers.append(SELF_TEAM_MISSING)
+    return blockers
+
+
 def generate_blockers(project, report_type, actor=None):
-    availability = report_availability(project)[report_type]
-    blockers = list(availability["reasons"])
-    if not project.team_members.exists():
-        blockers.append("评价组成员尚未填写（在“编辑报告信息”中填写）")
+    blockers = request_blockers(project, report_type)
+    if not _has_team(project, EvaluationTeamMember.GROUP_THIRD):
+        blockers.append(THIRD_TEAM_MISSING)
     if actor is not None and not can_generate_report(actor):
         blockers.append("报告由评价机构管理员生成")
     return blockers
@@ -349,7 +391,7 @@ def generate_blockers(project, report_type, actor=None):
 def validate_can_generate(project, report_type, actor):
     if not can_generate_report(actor):
         raise PermissionDenied("报告由评价机构管理员生成。")
-    if report_type not in TYPE_SYSTEMS:
+    if report_type not in TYPE_SYSTEMS or report_type not in enabled_report_types():
         raise ValidationError("报告类型无效。")
     blockers = generate_blockers(project, report_type)
     if blockers:
@@ -420,6 +462,39 @@ def _add_table(document, headers, rows, *, header_bold=True, widths=None):
     return table
 
 
+def _add_team_table(document, headers, groups, widths):
+    """评价组成员表：每组一行通栏标题，再接表头与成员行。"""
+    table = document.add_table(rows=0, cols=len(headers))
+    table.style = "Table Grid"
+    for label, rows in groups:
+        title = table.add_row().cells
+        merged = title[0].merge(title[-1])
+        merged.text = label
+        merged.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in merged.paragraphs[0].runs:
+            run.bold = True
+        head = table.add_row().cells
+        for index, header in enumerate(headers):
+            head[index].text = header
+            head[index].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in head[index].paragraphs[0].runs:
+                run.bold = True
+        for values in rows:
+            cells = table.add_row().cells
+            for index, value in enumerate(values):
+                cells[index].text = "" if value is None else str(value)
+    table.autofit = False
+    for row in table.rows:
+        for index, width in enumerate(widths):
+            if index < len(row.cells):
+                row.cells[index].width = Cm(width)
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(10)
+    return table
+
+
 def _docx_bytes(report, report_no, version, generated_by):
     project = report["project"]
     now = timezone.localtime()
@@ -471,6 +546,8 @@ def _docx_bytes(report, report_no, version, generated_by):
                     ["报告生成人", display_name(generated_by)],
                 ]
             _add_table(document, block["headers"], rows, widths=block.get("widths"))
+        elif kind == "team":
+            _add_team_table(document, block["headers"], block["groups"], block["widths"])
 
     buffer = BytesIO()
     document.save(buffer)
@@ -533,4 +610,90 @@ def generate_report(project, report_type, actor):
         project=project,
         after={"report_type": report_type, "version": version, "sha256": sha256, "levels": levels},
     )
+    # 生成即视为同意该类型报告的待审核导出申请
+    for pending in project.report_requests.filter(report_type=report_type, status=ReportRequest.STATUS_PENDING):
+        _mark_request_approved(pending, actor, record)
     return record
+
+
+# ---------------------------------------------------------------------------
+# 报告导出申请：企业申请 → 管理员审核通过即生成报告
+# ---------------------------------------------------------------------------
+
+
+def get_pending_request(project, report_type):
+    return (
+        project.report_requests.filter(report_type=report_type, status=ReportRequest.STATUS_PENDING)
+        .select_related("requested_by__enterprise")
+        .first()
+    )
+
+
+def get_last_request(project, report_type):
+    return project.report_requests.filter(report_type=report_type).select_related("reviewed_by").first()
+
+
+def _log_request(actor, action, request, after=None):
+    AuditLog.objects.create(
+        actor=actor,
+        action=action,
+        model_name="ReportRequest",
+        object_id=str(request.id),
+        object_repr=request.get_report_type_display(),
+        project=request.project,
+        after=after,
+    )
+
+
+@transaction.atomic
+def request_export(project, report_type, actor):
+    if not is_project_owner(actor, project):
+        raise PermissionDenied("报告导出由申报企业申请。")
+    if report_type not in enabled_report_types():
+        raise ValidationError("报告类型无效。")
+    blockers = request_blockers(project, report_type)
+    if blockers:
+        raise ValidationError(f"暂不能申请导出{TYPE_TITLES[report_type]}：{'；'.join(blockers)}。")
+    if get_pending_request(project, report_type):
+        raise ValidationError("该报告已有导出申请正在审核中，请等待审核结果。")
+    request = ReportRequest.objects.create(project=project, report_type=report_type, requested_by=actor)
+    _log_request(actor, "report.request", request, after={"report_type": report_type})
+    return request
+
+
+@transaction.atomic
+def approve_request(request, actor):
+    if not can_generate_report(actor):
+        raise PermissionDenied("导出申请由评价机构管理员审核。")
+    if request.status != ReportRequest.STATUS_PENDING:
+        raise ValidationError("该申请已处理，不能重复审核。")
+    record = generate_report(request.project, request.report_type, actor)
+    request.refresh_from_db()
+    return record
+
+
+def _mark_request_approved(request, actor, record):
+    request.status = ReportRequest.STATUS_APPROVED
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.report = record
+    request.save(update_fields=["status", "reviewed_by", "reviewed_at", "report"])
+    _log_request(actor, "report.request_approve", request, after={"version": record.version, "report_no": record.report_no})
+
+
+@transaction.atomic
+def reject_request(request, actor, reason):
+    if not can_generate_report(actor):
+        raise PermissionDenied("导出申请由评价机构管理员审核。")
+    if request.status != ReportRequest.STATUS_PENDING:
+        raise ValidationError("该申请已处理，不能重复审核。")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationError("驳回时必须填写原因，企业会看到该原因。")
+    request.status = ReportRequest.STATUS_REJECTED
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.reject_reason = reason
+    request.save(update_fields=["status", "reviewed_by", "reviewed_at", "reject_reason"])
+    _log_request(actor, "report.request_reject", request, after={"reason": reason})
+    return request

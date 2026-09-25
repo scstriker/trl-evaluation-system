@@ -2,7 +2,7 @@
 {% load ui %}
 {% block title %}{{ project.name }} · {{ sys.name }}评价{% endblock %}
 {% block header_title %}{{ sys.name }}评价{% endblock %}
-{% block body_attrs %}{% if reopen_item %}data-auto-modal="item-modal-{{ reopen_item }}"{% endif %}{% endblock %}
+{% block body_attrs %}{% if reopen_item %}data-auto-modal="item-modal-{{ reopen_item }}"{% elif open_modal %}data-auto-modal="{{ open_modal }}"{% endif %}{% endblock %}
 
 {% block content %}
 <div class="page page-wide">
@@ -32,8 +32,42 @@
     <div class="small">条目上标有“审核意见”的，请逐条对照修改。</div>
   </div>
   {% endif %}
+  {% if is_owner and pending_target %}
+  <div class="alert info">
+    <strong>目标等级调整审核中：{{ sys.abbr }} {{ pending_target.from_level }} → {{ sys.abbr }} {{ pending_target.to_level }}。</strong>
+    提交于 {{ pending_target.requested_at|date:"Y-m-d H:i" }}，评价机构审核通过后生效；审核期间目标等级仍为 {{ sys.abbr }} {{ assessment.target_level }}。
+  </div>
+  {% elif is_owner and last_target and last_target.status == 'rejected' %}
+  <div class="alert warning">
+    <strong>目标等级调整申请（{{ sys.abbr }} {{ last_target.from_level }} → {{ sys.abbr }} {{ last_target.to_level }}）未通过：</strong>{{ last_target.reject_reason }}
+    <span class="small muted">（{{ last_target.reviewed_by|who }} · {{ last_target.reviewed_at|date:"Y-m-d H:i" }}）</span>
+    如仍需调整，可修改理由后<button class="btn ghost sm" type="button" data-modal-open="target-modal">重新申请…</button>
+  </div>
+  {% endif %}
   {% if is_owner and submitted_levels and assessment.status == 'in_progress' %}
   <div class="alert info">第 {{ submitted_text }} 级已提交，等待评价机构审核；审核期间这些级别不能修改。</div>
+  {% endif %}
+
+  {% if is_admin and pending_target %}
+  <div class="card review-panel">
+    <div class="card-head">
+      <h2>目标等级调整申请：{{ sys.abbr }} {{ pending_target.from_level }} → {{ sys.abbr }} {{ pending_target.to_level }}</h2>
+      <span class="small muted">申请人 {{ pending_target.requested_by|who }} · {{ pending_target.requested_at|date:"Y-m-d H:i" }}</span>
+    </div>
+    <div class="card-body">
+      <p class="mt-0"><strong>调整理由：</strong>{{ pending_target.reason }}</p>
+      <p class="small muted">
+        {% if pending_target.to_level > pending_target.from_level %}调高后，新增的第 {{ pending_target.from_level|add:1 }}{% if pending_target.to_level > pending_target.from_level|add:1 %}~{{ pending_target.to_level }}{% endif %} 级需要企业逐条自评并提交审核{% if assessment.status == 'reported' %}；本评价已出具报告，通过后回到“评价中”，已生成的报告保留{% endif %}。
+        {% else %}调低后，超出新目标的级别不再需要填写，已填写的内容保留。{% endif %}
+      </p>
+      <div class="flex" style="margin-top:12px">
+        <button class="btn primary" type="button" data-modal-open="target-approve-modal">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg> 同意调整…
+        </button>
+        <button class="btn secondary" type="button" data-modal-open="target-reject-modal">驳回…</button>
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   {% if is_admin and submitted_levels and assessment.status == 'in_progress' %}
@@ -73,7 +107,10 @@
 
   {# ================= 概况 ================= #}
   <div class="kpi-row">
-    <div class="kpi"><span class="l">目标等级</span><span class="v">{{ sys.abbr }} {{ assessment.target_level }}</span><span class="d">{{ sys.standard }}</span></div>
+    <div class="kpi"><span class="l">目标等级</span><span class="v">{{ sys.abbr }} {{ assessment.target_level }}</span>
+      <span class="d">{% if pending_target %}<span class="tag warning">调整审核中 → {{ sys.abbr }} {{ pending_target.to_level }}</span>
+        {% elif is_owner %}<button class="btn ghost sm kpi-action" type="button" data-modal-open="target-modal">申请调整目标等级…</button>
+        {% else %}{{ sys.standard }}{% endif %}</span></div>
     <div class="kpi"><span class="l">已审核通过</span><span class="v">{% if achieved %}{{ sys.abbr }} {{ achieved }}{% else %}—{% endif %}</span><span class="d">自第 1 级起连续通过的最高级别</span></div>
     <div class="kpi"><span class="l">自评进度（目标级内）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
     <div class="kpi"><span class="l">满足 / 不满足 / 不适用</span><span class="v">{{ scope.satisfied }} / {{ scope.not_satisfied }} / {{ scope.not_applicable }}</span><span class="d">不满足、不适用需说明理由</span></div>
@@ -195,6 +232,74 @@
         <div class="modal-foot">
           <button class="btn secondary" type="button" data-modal-close>再检查一下</button>
           <button class="btn primary" type="submit" {% if not default_submit %}disabled{% endif %}>确认提交</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 企业：申请调整目标等级 ---- #}
+  {% if is_owner and target_options %}
+  <div class="modal-backdrop" id="target-modal" role="dialog" aria-modal="true" aria-labelledby="target-title">
+    <div class="modal">
+      <div class="modal-head"><h3 id="target-title">申请调整目标等级 · {{ sys.name }}评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'evaluations:target_request' project.id sys.code %}">
+        {% csrf_token %}
+        <div class="modal-body form-grid">
+          <p class="mt-0 mb-0">当前目标等级为 <strong>{{ sys.abbr }} {{ assessment.target_level }}</strong>。调整申请经评价机构审核通过后生效，审核期间仍按当前目标填写。</p>
+          <div class="field">
+            <label class="field-label">新的目标等级 *</label>
+            <div class="option-list levels">
+              {% for level, selectable, why in target_options %}
+              <label class="option {% if not selectable %}disabled{% endif %}">
+                <input type="radio" name="to_level" value="{{ level }}" {% if not selectable %}disabled{% endif %} {% if level == assessment.target_level|add:1 and selectable %}checked{% endif %} required>
+                <span class="t">{{ sys.abbr }} {{ level }}</span>
+                <span class="d">{% if why %}{{ why }}{% elif level > assessment.target_level %}调高{% else %}调低{% endif %}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <div class="hint">目标等级不能低于已提交或已审核的最高级别。调高后需对新增级别逐条自评并提交审核{% if assessment.status == 'reported' %}；本评价已出具报告，调高后回到“评价中”，已生成的报告保留{% endif %}。</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="target-reason">调整理由 *（评价机构可见）</label>
+            <textarea class="input" id="target-reason" name="reason" rows="3" required placeholder="例如：样机已完成第三方环境适应性试验，具备申报更高一级的条件。"></textarea>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">提交调整申请</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理员：审核目标等级调整 ---- #}
+  {% if is_admin and pending_target %}
+  <div class="modal-backdrop" id="target-approve-modal" role="dialog" aria-modal="true" aria-labelledby="target-approve-title">
+    <div class="modal narrow">
+      <div class="modal-head"><h3 id="target-approve-title">同意调整目标等级</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <div class="modal-body"><p class="mt-0 mb-0">确认将「{{ project.name }}」的{{ sys.name }}评价目标等级由 <strong>{{ sys.abbr }} {{ pending_target.from_level }}</strong> 调整为 <strong>{{ sys.abbr }} {{ pending_target.to_level }}</strong>？{% if assessment.status == 'reported' and pending_target.to_level > pending_target.from_level %}本评价已出具报告，调整后回到“评价中”，已生成的报告保留。{% endif %}</p></div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <form method="post" action="{% url 'evaluations:target_approve' pending_target.id %}">{% csrf_token %}<button class="btn primary" type="submit">确认调整</button></form>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="target-reject-modal" role="dialog" aria-modal="true" aria-labelledby="target-reject-title">
+    <div class="modal">
+      <div class="modal-head"><h3 id="target-reject-title">驳回目标等级调整申请</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'evaluations:target_reject' pending_target.id %}">
+        {% csrf_token %}
+        <div class="modal-body form-grid">
+          <div class="field">
+            <label class="field-label" for="target-reject-reason">驳回原因 *（企业可见）</label>
+            <textarea class="input" id="target-reject-reason" name="reason" rows="3" required placeholder="例如：目前佐证材料尚不足以支撑更高一级，建议完成第 4 级审核后再申请。"></textarea>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认驳回</button>
         </div>
       </form>
     </div>

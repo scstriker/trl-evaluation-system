@@ -1,0 +1,20 @@
+{# 评价组成员编辑表：需要 formset / title / note #}
+<div class="field">
+  <label class="field-label">{{ title }}</label>
+  {{ formset.management_form }}
+  {% if formset.non_form_errors %}<div class="field-error">{{ formset.non_form_errors|join:"；" }}</div>{% endif %}
+  <div class="table-wrap">
+    <table class="data team-table">
+      <thead><tr><th style="width:100px">角色</th><th style="width:100px">姓名</th><th style="width:130px">职务 / 职称</th><th>专业及特长</th><th>工作单位</th><th class="num" style="width:56px">删除</th></tr></thead>
+      <tbody>
+        {% for f in formset %}
+        <tr>
+          <td>{{ f.id }}{{ f.role }}</td><td>{{ f.name }}</td><td>{{ f.title }}</td><td>{{ f.specialty }}</td><td>{{ f.org }}</td>
+          <td class="num">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="hint">{{ note }}空白行不会保存；需要更多行时，保存后会自动补充两行空白。</div>
+</div>

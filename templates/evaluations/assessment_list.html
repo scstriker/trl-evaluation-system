@@ -80,7 +80,9 @@
               {% if row.project.domain %}<div class="small muted">{{ row.project.domain }}</div>{% endif %}</td>
             {% if current_is_admin %}<td>{{ row.project.applicant }}</td>{% endif %}
             <td class="nowrap small">{{ row.project.get_tech_type_display }}</td>
-            <td class="num"><span class="tag brand">{{ sys.abbr }} {{ row.assessment.target_level }}</span></td>
+            <td class="num"><span class="tag brand">{{ sys.abbr }} {{ row.assessment.target_level }}</span>
+              {% if row.pending_target %}<div class="target-note"><span class="tag warning">调整审核中 → {{ sys.abbr }} {{ row.pending_target.to_level }}</span></div>
+              {% elif not current_is_admin %}<div class="target-note"><a class="small" href="{% url 'evaluations:assessment_detail' row.project.id sys.code %}?adjust=1">申请调整</a></div>{% endif %}</td>
             <td class="num">{% if row.achieved %}{{ sys.abbr }} {{ row.achieved }}{% else %}—{% endif %}</td>
             <td>
               <div class="flex" style="gap:8px;flex-wrap:nowrap">

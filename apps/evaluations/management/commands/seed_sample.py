@@ -21,7 +21,7 @@ from apps.evaluations import services
 from apps.evaluations.models import CheckItem, EvaluationProject, EvaluationTeamMember
 from apps.evidence.services import upload_evidence_file
 from apps.reports.models import Report
-from apps.reports.services import generate_report
+from apps.reports.services import approve_request, request_export
 from apps.rules.models import RuleItem
 from apps.rules.systems import TRL
 
@@ -37,11 +37,29 @@ ENTERPRISES = [
     ("jingce", "江苏精测智能装备有限公司", "91320500MA0000004", "赵经理", "13800000004", EnterpriseProfile.STATUS_PENDING),
 ]
 
-TEAM = [
+# 第三方评价组（评价机构填写）
+THIRD_TEAM = [
     ("组长", "杜工", "正高级工程师", "测量控制设备及系统评价", "机械工业仪器仪表综合技术经济研究所"),
     ("成员", "李工", "高级工程师", "智能制造与装备技术", "机械工业仪器仪表综合技术经济研究所"),
     ("成员", "王工", "高级工程师", "工业软件测评", "机械工业仪器仪表综合技术经济研究所"),
 ]
+
+# 自评估工作组（企业填写），按企业用户名
+SELF_TEAMS = {
+    "gangyan": [
+        ("组长", "张工", "研究员 / 项目负责人", "X 射线荧光光谱分析仪器研制", "钢研纳克检测技术股份有限公司"),
+        ("成员", "刘工", "高级工程师", "在线取样与流体控制", "钢研纳克检测技术股份有限公司"),
+    ],
+    "hexin": [
+        ("组长", "李工", "高级工程师 / 技术总监", "X 射线光学系统设计", "核芯光电科技（山东）有限公司"),
+        ("成员", "陈工", "工程师", "SDD 探测器研发", "核芯光电科技（山东）有限公司"),
+        ("成员", "周工", "工程师", "质量管理与检验", "核芯光电科技（山东）有限公司"),
+    ],
+    "zhongnan": [
+        ("组长", "王老师", "教授", "光谱分析与化学计量学", "中南大学"),
+        ("成员", "郑老师", "副教授", "工业软件开发与测试", "中南大学"),
+    ],
+}
 
 OVERVIEW_TEXT = (
     "本项目来源于“十五五”智能制造系统和机器人国家科技重大专项，由钢研纳克检测技术股份有限公司牵头，"
@@ -162,6 +180,7 @@ class Command(BaseCommand):
         self._fill(p1, gangyan, levels=[1, 2, 3])
         self._submit_and_pass(p1, gangyan, admin, up_to=3)
         self._fill_partial(p1, gangyan, level=4, count=5)
+        self._team(p1, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["gangyan"])
 
         # ② 待审核：第 1~4 级一次提交
         p2 = self._create(
@@ -173,8 +192,16 @@ class Command(BaseCommand):
         )
         self._fill(p2, gangyan, levels=[1, 2, 3, 4])
         services.submit_levels(p2.get_assessment(TRL), gangyan, 4)
+        # 评价机构审核时直接修改了一条的满足情况说明（留痕）
+        item = p2.get_assessment(TRL).items.filter(level=1).order_by("track", "seq").first()
+        services.admin_edit_item_text(
+            item,
+            admin,
+            item.statement + "（评价组核对：专利已授权，授权公告号见附件。）",
+            item.support_info,
+        )
 
-        # ③ 待出报告：目标 4 级全部通过，评价组已填写
+        # ③ 待出报告：目标 4 级全部通过，两组评价组已填写，企业已申请报告导出（待审核）
         p3 = self._create(
             hexin,
             name="高性能 XRF 光学系统",
@@ -184,7 +211,9 @@ class Command(BaseCommand):
         )
         self._fill(p3, hexin, levels=[1, 2, 3, 4])
         self._submit_and_pass(p3, hexin, admin, up_to=4)
-        self._team(p3)
+        self._team(p3, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["hexin"])
+        self._team(p3, EvaluationTeamMember.GROUP_THIRD, THIRD_TEAM)
+        request_export(p3, Report.TYPE_TRL, hexin)
 
         # ④ 已退回：第 1 级通过，第 2~3 级退回修改（含逐条审核意见）
         p4 = self._create(
@@ -202,7 +231,7 @@ class Command(BaseCommand):
         services.set_review_comment(item, admin, "请补充方案评审会议纪要或专家评审意见，作为技术方案已确定的佐证。")
         services.return_levels(assessment, admin, [2, 3], "第 2 级技术方案的佐证不充分，请按条目意见补充材料后，与第 3 级一并重新提交。")
 
-        # ⑤ 已出报告：软件 · 目标 3 级 · 已出具技术就绪度评价报告 V1
+        # ⑤ 已出报告：软件 · 目标 3 级 · 导出申请已通过（V1），企业又申请将目标调高到 4 级（待审核）
         p5 = self._create(
             zhongnan,
             name="稀土萃取在线检测一体化软件",
@@ -212,10 +241,21 @@ class Command(BaseCommand):
         )
         self._fill(p5, zhongnan, levels=[1, 2, 3])
         self._submit_and_pass(p5, zhongnan, admin, up_to=3)
-        self._team(p5)
-        generate_report(p5, Report.TYPE_TRL, admin)
+        self._team(p5, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
+        self._team(p5, EvaluationTeamMember.GROUP_THIRD, THIRD_TEAM)
+        approve_request(request_export(p5, Report.TYPE_TRL, zhongnan), admin)
+        services.request_target_change(
+            p5.get_assessment(TRL),
+            zhongnan,
+            4,
+            "软件已在钢研纳克在线检测仪表初样机上完成联调，关键功能在实验室环境下验证通过，申请将目标调整为 TRL 4。",
+        )
 
-        self.stdout.write(self.style.SUCCESS("样例项目已生成：填写中 / 待审核 / 待出报告 / 已退回 / 已出报告 各一个"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "样例项目已生成：填写中 / 待审核 / 待出报告（导出申请待审核）/ 已退回 / 已出报告（目标调整待审核）各一个"
+            )
+        )
 
     # ------------------------------------------------------------------
     def _create(self, owner, *, name, domain, tech_type, target):
@@ -232,10 +272,11 @@ class Command(BaseCommand):
         assessment.save(update_fields=["summary_text"])
         return project
 
-    def _team(self, project):
-        for order, (role, name, title, specialty, org) in enumerate(TEAM, start=1):
+    def _team(self, project, group, members):
+        start = project.team_members.count()
+        for order, (role, name, title, specialty, org) in enumerate(members, start=start + 1):
             EvaluationTeamMember.objects.create(
-                project=project, order=order, role=role, name=name, title=title, specialty=specialty, org=org
+                project=project, group=group, order=order, role=role, name=name, title=title, specialty=specialty, org=org
             )
 
     def _fill_item(self, item, owner):

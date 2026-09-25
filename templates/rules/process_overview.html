@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <h1>评价流程</h1>
-      <div class="sub">技术就绪度（TRL）与制造成熟度（MRL）评价采用同一套办理流程：企业自评、逐级提交，评价机构审核并出具报告。依据 GB/T 22900-2022《科学技术研究项目评价通则》及相应评价标准和细则组织实施。</div>
+      <div class="sub">{% if mrl_enabled %}技术就绪度（TRL）与制造成熟度（MRL）评价采用同一套办理流程{% else %}技术就绪度（TRL）评价的办理流程{% endif %}：企业自评、逐级提交，评价机构审核并出具报告。依据 GB/T 22900-2022《科学技术研究项目评价通则》及相应评价标准和细则组织实施。</div>
     </div>
   </div>
   {% include "rules/_rules_tabs.html" %}
@@ -27,7 +27,7 @@
           <div class="no">2</div>
           <div class="body">
             <h3>申报评价项目 <span class="who-tag">企业</span></h3>
-            <p>填写技术项目名称和应用领域，选择技术类型（设备技术 / 一般硬件产品技术 / 计算机软件技术），勾选技术就绪度评价、制造成熟度评价或两者，并确定目标等级。系统按评价细则生成逐级自评条目。</p>
+            <p>填写技术项目名称和应用领域，选择技术类型（设备技术 / 一般硬件产品技术 / 计算机软件技术），{% if mrl_enabled %}勾选技术就绪度评价、制造成熟度评价或两者，并确定目标等级{% else %}并确定目标技术就绪度等级{% endif %}。系统按评价细则生成逐级自评条目。申报后如需调整目标等级，可在项目评价页提出调整申请，经评价机构审核后生效。</p>
           </div>
         </div>
         <div class="flow-step">
@@ -48,20 +48,28 @@
           <div class="no">5</div>
           <div class="body">
             <h3>逐级审核 / 退回 <span class="who-tag org">评价机构</span></h3>
-            <p>评价机构逐级核查自评内容与佐证材料，自第 1 级起按顺序审核通过（可逐级也可批量），或填写审核意见（可具体到条目）退回。企业按意见修改后重新提交。已通过等级 = 自第 1 级起连续审核通过的最高级别。系统不做自动达标判断，结论由评价机构确认。</p>
+            <p>评价机构逐级核查自评内容与佐证材料，自第 1 级起按顺序审核通过（可逐级也可批量），或填写审核意见（可具体到条目）退回。必要时评价机构可直接修改满足情况说明和评价支撑信息，修改内容在条目记录中留痕。已通过等级 = 自第 1 级起连续审核通过的最高级别。系统不做自动达标判断，结论由评价机构确认。</p>
           </div>
         </div>
         <div class="flow-step">
           <div class="no">6</div>
           <div class="body">
-            <h3>出具评价报告 <span class="who-tag org">评价机构</span></h3>
-            <p>目标等级及以下各级全部审核通过后，评价机构填写评价组成员与评价综述，生成技术就绪度评价报告、制造成熟度评价报告或两者综合评价报告（Word），版本递增、SHA-256 存档。企业可在“评价报告”中下载。</p>
+            <h3>申请报告导出 <span class="who-tag">企业</span></h3>
+            <p>目标等级及以下各级全部审核通过后，企业在“评价报告”中填写项目概况和自评估工作组成员，在线预览报告并提交导出申请。审核通过前报告只能在线预览，不能下载或打印。</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="no">7</div>
+          <div class="body">
+            <h3>审核并出具评价报告 <span class="who-tag org">评价机构</span></h3>
+            <p>评价机构填写第三方评价组成员与评价综述，审核导出申请：通过即生成{% if mrl_enabled %}技术就绪度评价报告、制造成熟度评价报告或两者综合评价报告{% else %}技术就绪度评价报告{% endif %}（Word），版本递增、SHA-256 存档，企业随即可以下载和打印；驳回时须写明原因，企业修改后可重新申请。</p>
           </div>
         </div>
       </div>
     </div>
   </div>
 
+  {% if mrl_enabled %}
   <div class="grid-2">
     <div class="card">
       <div class="card-head"><h2>技术就绪度（TRL）等级</h2><span class="small muted">TRL 1~9</span></div>
@@ -83,5 +91,13 @@
       <p class="mt-0 mb-0">技术就绪度（TRL）衡量技术本身的成熟程度；制造成熟度（MRL）衡量将技术转化为可重复、稳定生产的制造能力的成熟程度。同一技术项目可以只做其中一类评价，也可以两类都做；两类评价都审核通过至目标等级后，可出具技术就绪度与制造成熟度综合评价报告。</p>
     </div>
   </div>
+  {% else %}
+  <div class="card">
+    <div class="card-head"><h2>技术就绪度（TRL）等级</h2><span class="small muted">TRL 1~9</span></div>
+    <table class="data">
+      <tbody>{% for d in trl_defs %}<tr><td class="num" style="width:72px">TRL {{ d.level }}</td><td>{{ d.name }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

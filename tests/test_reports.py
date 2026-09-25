@@ -19,8 +19,10 @@ def _complete(assessment, owner, admin):
     services.pass_levels(assessment, admin, assessment.target_level)
 
 
-def _team(project):
-    EvaluationTeamMember.objects.create(project=project, order=1, role="组长", name="杜工")
+def _team(project, groups=(EvaluationTeamMember.GROUP_SELF, EvaluationTeamMember.GROUP_THIRD)):
+    names = {EvaluationTeamMember.GROUP_SELF: "张工", EvaluationTeamMember.GROUP_THIRD: "杜工"}
+    for order, group in enumerate(groups, start=1):
+        EvaluationTeamMember.objects.create(project=project, group=group, order=order, role="组长", name=names[group])
 
 
 def _docx_text(report):

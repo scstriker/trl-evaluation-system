@@ -31,9 +31,15 @@ class ProjectForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["tech_type"].choices = EvaluationProject.TECH_TYPE_CHOICES
         self.mrl_available = rules_available(MRL)
+        if not self.mrl_available:
+            # 制造成熟度细则导入前不开放，申报页只保留技术就绪度
+            del self.fields["include_mrl"]
+            del self.fields["mrl_target"]
 
     def clean(self):
         cleaned = super().clean()
+        if not self.mrl_available:
+            cleaned["include_trl"] = True
         if cleaned.get("include_mrl") and not self.mrl_available:
             self.add_error("include_mrl", "制造成熟度评价细则尚未导入，暂不能申报制造成熟度评价。")
         if not cleaned.get("include_trl") and not cleaned.get("include_mrl"):
@@ -84,3 +90,22 @@ TeamMemberFormSet = forms.inlineformset_factory(
         "org": forms.TextInput(attrs={"class": "input"}),
     },
 )
+
+
+def team_formset(project, group, data=None):
+    """评价组成员表单：按组（自评估工作组 / 第三方评价组）分别编辑。"""
+    return TeamMemberFormSet(
+        data,
+        instance=project,
+        prefix=f"team_{group}",
+        queryset=project.team_members.filter(group=group),
+    )
+
+
+def save_team_formset(formset, group):
+    members = formset.save(commit=False)
+    for member in members:
+        member.group = group
+        member.save()
+    for member in formset.deleted_objects:
+        member.delete()

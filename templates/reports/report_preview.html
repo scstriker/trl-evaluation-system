@@ -2,6 +2,7 @@
 {% load ui %}
 {% block title %}{{ report.title }} · {{ project.name }}{% endblock %}
 {% block header_title %}评价报告{% endblock %}
+{% block body_attrs %}{% if not print_allowed %}class="print-locked"{% endif %}{% endblock %}
 
 {% block content %}
 <div class="page page-wide">
@@ -9,6 +10,7 @@
     {% include "evaluations/_project_head.html" with tab="report" tabs=assessment_tabs %}
   </div>
 
+  {% if tabs|length > 1 %}
   <div class="report-type-tabs no-print" role="tablist" aria-label="报告类型">
     {% for t in tabs %}
       {% if t.available %}
@@ -21,9 +23,10 @@
       {% endif %}
     {% endfor %}
   </div>
+  {% endif %}
 
   <div class="flex-between no-print" style="margin-bottom:16px">
-    <div class="small muted">在线预览与生成的 Word 报告内容一致。{% if blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</div>
+    <div class="small muted">在线预览与生成的 Word 报告内容一致。{% if generate_blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</div>
     <div class="flex">
       {% if is_admin %}
         {% if can_generate %}
@@ -36,13 +39,69 @@
         {% endif %}
       {% endif %}
       {% if can_edit_info %}<button class="btn secondary" type="button" data-modal-open="info-modal">编辑报告信息</button>{% endif %}
-      <button class="btn ghost" type="button" onclick="window.print()">打印 / 存为 PDF</button>
+      {% if is_owner %}
+        {% if pending_request %}
+        <button class="btn secondary" type="button" disabled>导出申请审核中</button>
+        {% elif can_request %}
+        <button class="btn {% if reports %}secondary{% else %}primary{% endif %}" type="button" data-modal-open="request-modal">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v10M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
+          {% if reports %}申请导出新版本…{% else %}申请报告导出…{% endif %}
+        </button>
+        {% else %}
+        <button class="btn secondary" type="button" disabled title="{{ request_blockers|join:'；' }}">申请报告导出…</button>
+        {% endif %}
+      {% endif %}
+      {% if print_allowed %}<button class="btn ghost" type="button" onclick="window.print()">打印 / 存为 PDF</button>{% endif %}
     </div>
   </div>
 
-  {% if blockers %}
-  <div class="alert {% if is_admin %}warning{% else %}info{% endif %} no-print" style="margin-bottom:16px">
-    <strong>{% if is_admin %}暂不能生成本报告：{% else %}报告尚未出具：{% endif %}</strong>{{ blockers|join:"；" }}。
+  {# ---------- 企业：导出申请状态 ---------- #}
+  {% if is_owner %}
+    {% if pending_request %}
+    <div class="alert info no-print" style="margin-bottom:16px">
+      <strong>报告导出申请审核中。</strong>提交于 {{ pending_request.requested_at|date:"Y-m-d H:i" }}，评价机构审核通过后即可下载 Word 和打印；审核期间可继续在线预览。
+    </div>
+    {% elif last_request and last_request.status == 'rejected' %}
+    <div class="alert warning no-print" style="margin-bottom:16px">
+      <strong>报告导出申请未通过：</strong>{{ last_request.reject_reason }}
+      <span class="small muted">（{{ last_request.reviewed_by|who }} · {{ last_request.reviewed_at|date:"Y-m-d H:i" }}）</span>
+      请按原因修改后重新申请。
+    </div>
+    {% elif last_request and last_request.status == 'approved' and reports %}
+    <div class="alert success no-print" style="margin-bottom:16px">
+      <strong>报告导出申请已通过。</strong>{{ last_request.reviewed_at|date:"Y-m-d H:i" }} 生成 V{{ last_request.report.version|default:reports.0.version }}，可在下方“已出具版本”下载 Word，或打印 / 存为 PDF。
+    </div>
+    {% endif %}
+    {% if request_blockers and not pending_request %}
+    <div class="alert info no-print" style="margin-bottom:16px">
+      <strong>暂不能申请导出：</strong>{{ request_blockers|join:"；" }}。
+    </div>
+    {% endif %}
+  {% endif %}
+
+  {# ---------- 管理员：导出申请审核 ---------- #}
+  {% if is_admin and pending_request %}
+  <div class="card review-panel no-print">
+    <div class="card-head">
+      <h2>导出申请待审核 · {{ report.title }}</h2>
+      <span class="small muted">申请人 {{ pending_request.requested_by|who }} · {{ pending_request.requested_at|date:"Y-m-d H:i" }}</span>
+    </div>
+    <div class="card-body">
+      <p class="mt-0">请核对下方预览的报告内容。审核通过即生成 V{{ next_version }} Word 报告，企业随即可以下载和打印；驳回须写明原因。</p>
+      {% if generate_blockers %}
+      <div class="alert warning" style="margin-bottom:12px"><strong>通过前还需处理：</strong>{{ generate_blockers|join:"；" }}。</div>
+      {% endif %}
+      <div class="flex">
+        <button class="btn primary" type="button" data-modal-open="approve-request-modal" {% if generate_blockers %}disabled{% endif %}>
+          <svg class="icon" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg> 审核通过并生成报告…
+        </button>
+        <button class="btn secondary" type="button" data-modal-open="reject-request-modal">驳回…</button>
+      </div>
+    </div>
+  </div>
+  {% elif is_admin and generate_blockers %}
+  <div class="alert warning no-print" style="margin-bottom:16px">
+    <strong>暂不能生成本报告：</strong>{{ generate_blockers|join:"；" }}。
   </div>
   {% endif %}
 
@@ -69,9 +128,11 @@
       </table>
     </div>
     {% else %}
-    <div class="card-body muted small">尚未出具该类型的报告。</div>
+    <div class="card-body muted small">{% if is_admin %}尚未出具该类型的报告。{% else %}尚未出具该类型的报告。报告经评价机构审核通过后才能下载和打印，此前只能在线预览。{% endif %}</div>
     {% endif %}
   </div>
+
+  <div class="print-note">报告尚未经评价机构审核通过，不能打印。请在系统“评价报告”页提交导出申请，审核通过后即可下载和打印。</div>
 
   {# ================= 报告在线预览 ================= #}
   <div class="report-sheet">
@@ -97,6 +158,16 @@
         <tbody>{% for row in block.rows %}<tr>{% for cell in row %}<td>{{ cell|linebreaksbr }}</td>{% endfor %}</tr>{% endfor %}</tbody>
         {% endif %}
       </table>
+      {% elif block.kind == 'team' %}
+      <table class="data team-report">
+        <tbody>
+          {% for label, rows in block.groups %}
+          <tr class="group-row"><th colspan="{{ block.headers|length }}">{{ label }}</th></tr>
+          <tr class="head-row">{% for h in block.headers %}<th>{{ h }}</th>{% endfor %}</tr>
+          {% for row in rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
       {% endif %}
     {% endfor %}
   </div>
@@ -114,11 +185,12 @@
           <tr><th>报告编号</th><td class="mono">{{ report_no_preview }}</td></tr>
           <tr><th>版本</th><td>V{{ next_version }}</td></tr>
           {% for part in report.parts %}<tr><th>{{ part.sys.name }}</th><td>目标 {{ part.sys.abbr }} {{ part.target }} · 达成 {{ part.sys.abbr }} {{ part.achieved }} · {{ part.counts.completed }} 条核验记录</td></tr>{% endfor %}
-          <tr><th>评价组成员</th><td>{{ report.team|length }} 人</td></tr>
+          <tr><th>评价组成员</th><td>{% for label, members in report.team %}{{ label }} {{ members|length }} 人{% if not forloop.last %}；{% endif %}{% endfor %}</td></tr>
           <tr><th>佐证材料</th><td>{{ report.evidence_files|length }} 项</td></tr>
         </tbody>
       </table>
-      <p class="muted small mb-0" style="margin-top:12px">生成后相关评价变为“已出报告”，企业可在“评价报告”中下载；如需修改，可在评价页重新开放后退回相应级别，再生成新版本。</p>
+      {% if pending_request %}<p class="small mb-0" style="margin-top:12px">企业已提交该报告的导出申请，生成后申请自动标记为“已通过”。</p>{% endif %}
+      <p class="muted small mb-0" style="margin-top:12px">生成后相关评价变为“已出报告”，企业可在“评价报告”中下载和打印；如需修改，可在评价页重新开放后退回相应级别，再生成新版本。</p>
     </div>
     <div class="modal-foot">
       <button class="btn secondary" type="button" data-modal-close>取消</button>
@@ -133,10 +205,71 @@
   <div class="modal narrow">
     <div class="modal-head"><h3>暂不能生成报告</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
     <div class="modal-body">
-      <ul style="margin:0;padding-left:20px">{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
-      <p class="muted small mb-0" style="margin-top:12px">生成条件：相关评价的目标等级及以下各级全部审核通过，且已填写评价组成员。</p>
+      <ul style="margin:0;padding-left:20px">{% for b in generate_blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+      <p class="muted small mb-0" style="margin-top:12px">生成条件：相关评价的目标等级及以下各级全部审核通过，且自评估工作组、第三方评价组成员均已填写。</p>
     </div>
     <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>知道了</button></div>
+  </div>
+</div>
+{% endif %}
+
+{% if is_admin and pending_request %}
+<div class="modal-backdrop" id="approve-request-modal" role="dialog" aria-modal="true" aria-labelledby="approve-request-title">
+  <div class="modal narrow">
+    <div class="modal-head"><h3 id="approve-request-title">审核通过导出申请</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <div class="modal-body"><p class="mt-0 mb-0">确认通过「{{ project.name }}」的{{ report.title }}导出申请？系统将立即生成 <strong>V{{ next_version }}</strong> Word 报告，企业随即可以下载和打印。</p></div>
+    <div class="modal-foot">
+      <button class="btn secondary" type="button" data-modal-close>取消</button>
+      <form method="post" action="{% url 'reports:approve_request' pending_request.id %}">{% csrf_token %}<button class="btn primary" type="submit">通过并生成 V{{ next_version }}</button></form>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="reject-request-modal" role="dialog" aria-modal="true" aria-labelledby="reject-request-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="reject-request-title">驳回导出申请</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reports:reject_request' pending_request.id %}">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <div class="field">
+          <label class="field-label" for="reject-reason">驳回原因 *（企业可见）</label>
+          <textarea class="input" id="reject-reason" name="reason" rows="3" required placeholder="例如：1.2 项目概况中的主要技术指标与任务书不一致，请修改后重新申请。"></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn primary" type="submit">确认驳回</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if is_owner and can_request %}
+<div class="modal-backdrop" id="request-modal" role="dialog" aria-modal="true" aria-labelledby="request-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="request-title">申请报告导出</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reports:request_export' project.id %}">
+      {% csrf_token %}
+      <input type="hidden" name="type" value="{{ report_type }}">
+      <div class="modal-body">
+        <table class="data kv">
+          <tbody>
+            <tr><th>报告类型</th><td>{{ report.title }}</td></tr>
+            {% for part in report.parts %}<tr><th>{{ part.sys.name }}</th><td>目标 {{ part.sys.abbr }} {{ part.target }} · 已审核通过至 {{ part.sys.abbr }} {{ part.achieved }} <span class="tag success">已达目标</span></td></tr>{% endfor %}
+            {% for label, members in report.team %}<tr><th>{{ label }}</th><td>{% if members %}{{ members|length }} 人{% else %}<span class="muted">由评价机构填写</span>{% endif %}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+        <p class="small" style="margin-top:12px">提交后由评价机构审核：审核通过即生成 Word 报告，您可以下载和打印；如被驳回，会显示驳回原因。审核期间仍可在线预览。</p>
+        <label class="check-line">
+          <input type="checkbox" name="confirm" value="1" required>
+          <span>我已核对报告预览中的项目概况和自评估工作组信息，确认无误。</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>再检查一下</button>
+        <button class="btn primary" type="submit">提交导出申请</button>
+      </div>
+    </form>
   </div>
 </div>
 {% endif %}
@@ -153,7 +286,7 @@
         <div class="field">
           <label class="field-label" for="{{ info_form.report_no.id_for_label }}">报告编号（基础号）</label>
           {{ info_form.report_no }}
-          <div class="hint">各类报告自动追加后缀：-TRL（技术就绪度）、-MRL（制造成熟度）、-ZH（综合）</div>
+          <div class="hint">{% if mrl_enabled %}各类报告自动追加后缀：-TRL（技术就绪度）、-MRL（制造成熟度）、-ZH（综合）{% else %}报告自动追加后缀 -TRL{% endif %}</div>
         </div>
         {% endif %}
         <div class="field">
@@ -161,30 +294,21 @@
           {{ info_form.overview_text }}
         </div>
         {% if is_admin %}
-          {% for a in project.assessments.all %}
+          {% for a in project.assessments.all %}{% if a.system == 'trl' or mrl_enabled %}
           <div class="field">
             <label class="field-label" for="summary-{{ a.system }}">{{ a.sys.name }}评价 · 综述（评价机构填写）</label>
             <textarea class="input" id="summary-{{ a.system }}" name="summary_{{ a.system }}" rows="4">{{ a.summary_text }}</textarea>
           </div>
-          {% endfor %}
-          <div class="field">
-            <label class="field-label">2.3 评价组成员 *（生成报告前必须填写，角色、姓名必填）</label>
-            {{ team_formset.management_form }}
-            <div class="table-wrap">
-              <table class="data team-table">
-                <thead><tr><th style="width:90px">角色</th><th style="width:100px">姓名</th><th style="width:130px">职称</th><th>专业及特长</th><th>工作单位</th><th class="num" style="width:56px">删除</th></tr></thead>
-                <tbody>
-                  {% for f in team_formset %}
-                  <tr>
-                    <td>{{ f.id }}{{ f.role }}</td><td>{{ f.name }}</td><td>{{ f.title }}</td><td>{{ f.specialty }}</td><td>{{ f.org }}</td>
-                    <td class="num">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            <div class="hint">空白行不会保存；需要更多行时，保存后会自动补充两行空白。</div>
-          </div>
+          {% endif %}{% endfor %}
+        {% endif %}
+        {% include "reports/_team_formset.html" with formset=team_self title="2.3 评价人员 · 自评估工作组" note="由企业填写，申请报告导出前必须填写；角色、姓名必填。" %}
+        {% if is_admin %}
+        {% include "reports/_team_formset.html" with formset=team_third title="2.3 评价人员 · 第三方评价组" note="由评价机构填写，生成报告前必须填写；角色、姓名必填。" %}
+        {% elif third_members %}
+        <div class="field">
+          <label class="field-label">2.3 评价人员 · 第三方评价组（由评价机构填写）</label>
+          <div class="small muted">{% for m in third_members %}{{ m.role }} {{ m.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</div>
+        </div>
         {% endif %}
       </div>
       <div class="modal-foot">

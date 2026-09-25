@@ -19,8 +19,8 @@
     <nav aria-label="主导航">
       <a href="{% url 'rules:process_overview' %}" {% if active_nav == 'process' %}aria-current="page"{% endif %}>{% if current_is_admin %}评价流程/细则{% else %}评价流程{% endif %}</a>
       <a href="{% url 'evaluations:trl_list' %}" {% if active_nav == 'trl' %}aria-current="page"{% endif %}>TRL评价{% if pending_reviews.trl %}<span class="nav-count" title="待审核">{{ pending_reviews.trl }}</span>{% endif %}</a>
-      <a href="{% url 'evaluations:mrl_list' %}" {% if active_nav == 'mrl' %}aria-current="page"{% endif %}>MRL评价{% if pending_reviews.mrl %}<span class="nav-count" title="待审核">{{ pending_reviews.mrl }}</span>{% endif %}</a>
-      <a href="{% url 'reports:report_list' %}" {% if active_nav == 'reports' %}aria-current="page"{% endif %}>评价报告</a>
+      {% if mrl_enabled %}<a href="{% url 'evaluations:mrl_list' %}" {% if active_nav == 'mrl' %}aria-current="page"{% endif %}>MRL评价{% if pending_reviews.mrl %}<span class="nav-count" title="待审核">{{ pending_reviews.mrl }}</span>{% endif %}</a>{% endif %}
+      <a href="{% url 'reports:report_list' %}" {% if active_nav == 'reports' %}aria-current="page"{% endif %}>评价报告{% if pending_report_requests %}<span class="nav-count" title="待审核的导出申请">{{ pending_report_requests }}</span>{% endif %}</a>
       {% if current_is_admin %}
       <a href="{% url 'accounts:user_list' %}" {% if active_nav == 'users' %}aria-current="page"{% endif %}>用户管理{% if pending_users %}<span class="nav-count" title="待审核注册">{{ pending_users }}</span>{% endif %}</a>
       <a href="{% url 'audit:audit_list' %}" {% if active_nav == 'audit' %}aria-current="page"{% endif %}>审计</a>
@@ -52,7 +52,7 @@
   <footer class="app-footer no-print">
     <div class="inner">
       <span>{{ issuer_name }} · {{ system_name }}</span>
-      <span>评价依据：GB/T 22900-2022 · 《技术就绪度评价标准及细则》 · 《制造成熟度评价标准及细则》</span>
+      <span>评价依据：GB/T 22900-2022 · 《技术就绪度评价标准及细则》{% if mrl_enabled %} · 《制造成熟度评价标准及细则》{% endif %}</span>
     </div>
   </footer>
 

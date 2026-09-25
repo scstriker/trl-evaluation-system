@@ -1,4 +1,4 @@
-{# 条目弹窗：企业自评 / 管理员逐条意见。需要上下文 item / item_editable / can_comment / current_state #}
+{# 条目弹窗：企业自评 / 管理员逐条意见与修改说明。需要上下文 item / item_editable / can_comment / admin_can_edit_text / current_state #}
 {% load ui %}
 <div class="modal-backdrop" id="item-modal-{{ item.id }}" role="dialog" aria-modal="true" aria-labelledby="item-title-{{ item.id }}">
   <div class="modal wide">
@@ -69,9 +69,26 @@
           {% if current_state.state == 'passed' %}<span class="small muted">（本级已审核通过，内容冻结）</span>
           {% elif current_state.state == 'submitted' %}<span class="small muted">（本级已提交，等待审核）</span>{% endif %}
         </div>
+        {% if not admin_can_edit_text %}
         {% if item.statement %}<div class="field"><label class="field-label">满足情况说明</label><p class="mt-0 mb-0 prewrap">{{ item.statement }}</p></div>{% endif %}
         {% if item.support_info %}<div class="field"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0 prewrap">{{ item.support_info }}</p></div>{% endif %}
+        {% endif %}
       </div>
+      {% if admin_can_edit_text %}
+      <form method="post" action="{% url 'evaluations:item_admin_edit' item.id %}" class="form-grid admin-edit-box" data-dirty-guard>
+        {% csrf_token %}
+        <div class="field">
+          <label class="field-label" for="a-statement-{{ item.id }}">满足情况说明{% if item.result != 'unevaluated' %} *{% endif %}</label>
+          <textarea class="input" id="a-statement-{{ item.id }}" name="statement" rows="4" {% if item.result != 'unevaluated' %}required{% endif %}>{{ item.statement }}</textarea>
+        </div>
+        <div class="field">
+          <label class="field-label" for="a-support-{{ item.id }}">评价支撑信息（写入报告）</label>
+          <textarea class="input" id="a-support-{{ item.id }}" name="support_info" rows="2">{{ item.support_info }}</textarea>
+          <div class="hint">自评结论只能由企业修改。评价机构修改的说明文字企业可见，并记录在下方“填写与审核记录”中。</div>
+        </div>
+        <div class="flex" style="justify-content:flex-end"><button class="btn secondary sm" type="submit">保存修改</button></div>
+      </form>
+      {% endif %}
       {% endif %}
 
       {% if item.evaluated_by %}
@@ -133,6 +150,7 @@
         {% for log in item.history %}
         <div>{{ log.created_at|date:"Y-m-d H:i" }} · {{ log.actor|who }} ·
           {% if log.action == 'item.review' %}审核意见：{{ log.after.review_comment|default:"（已清除）" }}
+          {% elif log.action == 'item.admin_edit' %}评价机构修改了{% if log.before.statement != log.after.statement %}满足情况说明{% if log.before.support_info != log.after.support_info %}和{% endif %}{% endif %}{% if log.before.support_info != log.after.support_info %}评价支撑信息{% endif %}
           {% elif log.after.result == 'satisfied' %}自评为「满足」{% elif log.after.result == 'not_satisfied' %}自评为「不满足」{% elif log.after.result == 'not_applicable' %}自评为「不适用」{% else %}{{ log.action }}{% endif %}
         </div>
         {% endfor %}
