@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'reassign' %}更换专家{% else %}分配专家{% endif %}{% endblock %}
+{% block header_title %}专家评审{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>{% if mode == 'reassign' %}更换席位 {{ assignment.slot }} 的专家{% else %}分配评审专家{% endif %}</h1>
+      <div class="sub">{{ project.name }} · {{ project.applicant }} · {{ sys.name }}评价第 {{ round.number }} 轮 · {{ round.items.count }} 条</div>
+    </div>
+    <div class="actions"><a class="btn ghost sm" href="{% url 'reviews:round_detail' round.id %}">← 返回评审管理</a></div>
+  </div>
+
+  {% if mode == 'reassign' %}
+  <div class="alert info">当前专家：<strong>{{ assignment.expert.expert_profile.name }}</strong>（{{ assignment.get_status_display }}{% if assignment.decline_reason %}，拒绝原因：{{ assignment.decline_reason }}{% endif %}）。更换后原专家收到“任务已收回”的私信，新专家收到新任务。</div>
+  {% else %}
+  <div class="alert info">每轮固定 3 位专家，本次还需选择 <strong>{{ free_slots|length }}</strong> 位（席位 {% for s in free_slots %}{{ s }}{% if not forloop.last %}、{% endif %}{% endfor %}）。专家收到站内私信后，须签署保密与回避承诺才能看到项目材料。</div>
+  {% endif %}
+
+  <div class="filter-tabs" aria-label="技术领域">
+    <a href="?specialty=" {% if not specialty %}aria-current="true"{% endif %}>全部领域</a>
+    {% for s in specialties %}<a href="?specialty={{ s.code }}{% if q %}&q={{ q|urlencode }}{% endif %}" {% if specialty and specialty.pk == s.pk %}aria-current="true"{% endif %}>{{ s.name }}{% if project.specialty and project.specialty.pk == s.pk %} <span>项目领域</span>{% endif %}</a>{% endfor %}
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="card">
+      <div class="card-head">
+        <h2>可分配的专家 <span class="small muted" style="font-weight:400">账号启用、在职、本轮未参与；与企业同单位的排在最后</span></h2>
+        <span class="small muted">共 {{ experts|length }} 位</span>
+      </div>
+      {% if experts %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th style="width:44px"></th><th>姓名</th><th>职称 / 职务</th><th>工作单位</th><th>专业领域 / 标识</th><th class="num">在办任务</th><th>提示</th></tr></thead>
+          <tbody>
+            {% for e in experts %}
+            <tr>
+              <td><input type="{% if mode == 'reassign' %}radio{% else %}checkbox{% endif %}" name="{% if mode == 'reassign' %}expert{% else %}experts{% endif %}" value="{{ e.user_id }}" aria-label="选择{{ e.name }}"></td>
+              <td class="nowrap"><a href="{% url 'experts:expert_detail' e.pk %}" target="_blank" rel="noopener">{{ e.name }}</a></td>
+              <td class="small">{{ e.title|default:"—" }}{% if e.position %}<div class="muted">{{ e.position }}</div>{% endif %}</td>
+              <td>{{ e.organization }}</td>
+              <td class="small">{{ e.specialty.name }}{% if e.tags %}<div>{% for tag in e.tags %}<span class="tag outline">{{ tag }}</span> {% endfor %}</div>{% endif %}</td>
+              <td class="num">{{ e.load }}</td>
+              <td>{% if e.conflict %}<span class="tag warning">与申报企业同单位，注意回避</span>{% else %}<span class="muted small">—</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state"><div class="big">该领域没有可分配的专家</div><p>换一个技术领域，或到专家库新增专家。</p></div>
+      {% endif %}
+      <div class="card-body form-grid" style="border-top:1px solid var(--border)">
+        {% if mode == 'reassign' %}
+        <div class="field">
+          <label class="field-label" for="reason">更换原因 *（记入审计日志）</label>
+          <textarea class="input" id="reason" name="reason" rows="2" required placeholder="例如：原专家拒绝任务 / 逾期未评审"></textarea>
+        </div>
+        {% else %}
+        <div class="field" style="max-width:280px">
+          <label class="field-label" for="review_days">评审期限（天）</label>
+          <input class="input" type="number" id="review_days" name="review_days" min="1" max="60" value="{{ round.review_days }}">
+          <div class="hint">从分配时起算，超期后系统提醒管理员</div>
+        </div>
+        {% endif %}
+        <div class="flex" style="justify-content:flex-end">
+          <button class="btn primary" type="submit" {% if not experts %}disabled{% endif %}>{% if mode == 'reassign' %}确认更换{% else %}确认分配{% endif %}</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

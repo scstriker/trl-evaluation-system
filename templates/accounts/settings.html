@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}系统设置{% endblock %}
+{% block header_title %}系统设置{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>系统设置</h1>
+      <div class="sub">报告印章、专家评审与整改期限、专家劳务费的默认值。修改会记入审计日志。</div>
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>报告印章</h2>{% if config.seal_image %}<span class="tag success">已上传</span>{% else %}<span class="tag neutral">未上传</span>{% endif %}</div>
+        <div class="card-body form-grid">
+          <p class="small muted mt-0 mb-0">生成 Word / PDF 报告时，印章图片放在扉页署名处。这是版式印章，不是有法律效力的电子签章。未上传时，报告在该处显示“（盖章）”。</p>
+          {% if config.seal_image %}
+          <div class="seal-preview"><img src="{% url 'accounts:seal_image' %}?v={{ config.updated_at|date:'U' }}" alt="当前印章图片"></div>
+          <label class="check-line"><input type="checkbox" name="clear_seal" value="1"> 移除当前印章图片</label>
+          {% endif %}
+          <div class="field">
+            <label class="field-label" for="id_seal_upload">{% if config.seal_image %}替换{% else %}上传{% endif %}印章图片</label>
+            <input type="file" class="input" name="seal_upload" id="id_seal_upload" accept="image/png">
+            <div class="hint">PNG 格式，建议透明背景、边长 300～600 像素，不超过 1MB。请使用本单位的印章图片。</div>
+            {% if form.seal_upload.errors %}<div class="error">{{ form.seal_upload.errors|join:"；" }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>期限与劳务费</h2></div>
+        <div class="card-body form-grid">
+          <div class="field">
+            <label class="field-label" for="id_expert_review_days">专家评审期限（天）</label>
+            <input type="number" class="input" name="expert_review_days" id="id_expert_review_days" min="1" max="60" value="{{ form.expert_review_days.value }}">
+            <div class="hint">从分配专家起算。超过期限仍未提交意见，系统给管理员发站内私信，可催办或更换专家。</div>
+            {% if form.expert_review_days.errors %}<div class="error">{{ form.expert_review_days.errors|join:"；" }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label class="field-label" for="id_rectify_days">整改期限（天）</label>
+            <input type="number" class="input" name="rectify_days" id="id_rectify_days" min="1" max="90" value="{{ form.rectify_days.value }}">
+            <div class="hint">从管理员终审要求整改起算。截止前 2 天提醒企业，逾期同时通知管理员和企业。</div>
+            {% if form.rectify_days.errors %}<div class="error">{{ form.rectify_days.errors|join:"；" }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label class="field-label" for="id_expert_fee_default">单次评审默认劳务费（元）</label>
+            <input type="number" class="input" name="expert_fee_default" id="id_expert_fee_default" min="0" step="0.01" value="{{ form.expert_fee_default.value }}">
+            <div class="hint">专家提交评审意见后自动生成一条劳务记录，金额取此默认值，可在劳务记录中逐条修改。</div>
+            {% if form.expert_fee_default.errors %}<div class="error">{{ form.expert_fee_default.errors|join:"；" }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="justify-content:flex-end;margin-top:var(--space-5)">
+      {% if config.updated_by %}<span class="small muted">上次修改：{{ config.updated_at|date:"Y-m-d H:i" }}</span>{% endif %}
+      <button class="btn primary" type="submit">保存设置</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

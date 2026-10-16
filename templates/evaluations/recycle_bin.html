@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}回收站{% endblock %}
+{% block header_title %}回收站{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>回收站</h1>
+      <div class="sub">企业删除或评价机构删除的项目都会先放在这里。恢复后项目回到原列表；彻底删除会同时清理佐证材料和报告文件，审计日志仍保留操作记录。</div>
+    </div>
+    <div class="actions"><a class="btn ghost sm" href="{% url 'evaluations:trl_list' %}">← 返回项目列表</a></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>已删除的项目</h2><span class="small muted">共 {{ projects|length }} 个</span></div>
+    {% if projects %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>技术项目名称</th><th>委托（受评）单位</th><th>评价内容</th><th class="nowrap">删除人 / 时间</th><th>删除理由</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for p in projects %}
+          <tr>
+            <td><strong>{{ p.name }}</strong>{% if p.domain %}<div class="small muted">{{ p.domain }}</div>{% endif %}</td>
+            <td>{{ p.applicant }}</td>
+            <td class="small nowrap">{% for a in p.assessments.all %}{{ a.sys.abbr }} 目标 {{ a.target_level }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+            <td class="small nowrap">{{ p.deleted_by|who }}{% if p.deleted_by_id == p.owner_id %} <span class="tag outline">企业删除</span>{% endif %}<div class="muted">{{ p.deleted_at|date:"Y-m-d H:i" }}</div></td>
+            <td class="small">{{ p.delete_reason|default:"—" }}</td>
+            <td class="nowrap">
+              <form method="post" action="{% url 'evaluations:recycle_restore' p.id %}" style="display:inline">{% csrf_token %}<button class="btn secondary sm" type="submit">恢复</button></form>
+              <button class="btn ghost sm" type="button" data-modal-open="purge-{{ p.id }}">彻底删除</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="big">回收站是空的</div><p>删除的项目会先放在这里，可以恢复。</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for p in projects %}
+<div class="modal-backdrop" id="purge-{{ p.id }}" role="dialog" aria-modal="true">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>彻底删除项目</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'evaluations:recycle_purge' p.id %}">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">彻底删除「<strong>{{ p.name }}</strong>」后不能恢复。评价条目、佐证材料和已生成的报告文件都会被清除，审计日志保留项目名称和操作记录。</p>
+        <label class="check-line"><input type="checkbox" name="confirm" value="1" required> 我确认彻底删除，且知道不能恢复</label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn danger" type="submit">彻底删除</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

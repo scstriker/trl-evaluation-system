@@ -7,10 +7,13 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import (
+    admin_required,
     can_create_project,
     can_review,
+    can_view_project,
     get_visible_project_or_404,
     is_admin,
+    is_expert,
     is_project_owner,
     visible_projects,
 )
@@ -18,6 +21,7 @@ from apps.audit.models import AuditLog
 from apps.evaluations import services
 from apps.evaluations.forms import ProjectForm
 from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, LevelReview, TargetChangeRequest
+from apps.reviews import services as review_services
 from apps.rules.models import LevelDefinition
 from apps.rules.systems import MRL, TRL, get_system
 
@@ -58,6 +62,8 @@ def _get_assessment_or_404(request, project_id, system):
 
 @login_required
 def assessment_list(request, system):
+    if is_expert(request.user):
+        return redirect("accounts:home")
     if not services.system_enabled(system):
         return redirect("evaluations:trl_list")
     sys = get_system(system)
@@ -82,6 +88,8 @@ def assessment_list(request, system):
             bucket = "submitted"
         elif assessment.status == Assessment.STATUS_REPORTED:
             bucket = "reported"
+        elif assessment.is_expert_mode:
+            bucket = review_services.list_bucket(assessment)
         elif achieved >= assessment.target_level:
             bucket = "ready"
         elif submitted:
@@ -118,6 +126,7 @@ def assessment_list(request, system):
             "counters": counters,
             "can_create": can_create_project(request.user),
             "rules_ready": services.rules_available(system),
+            "recycle_count": EvaluationProject.all_objects.filter(deleted_at__isnull=False).count() if admin else 0,
             "active_nav": system,
         },
     )
@@ -201,15 +210,19 @@ def add_assessment_view(request, project_id, system):
 
 def _default_level(assessment, states, admin):
     if admin:
-        for state in states:
-            if state["state"] == LevelReview.STATUS_SUBMITTED:
-                return state["level"]
+        wanted_states = (LevelReview.STATUS_SUBMITTED, services.STATE_EXPERT_REVIEW)
     else:
-        for wanted in (LevelReview.STATUS_RETURNED, services.STATE_DRAFT, services.STATE_READY):
-            for state in states:
-                if state["state"] == wanted:
-                    return state["level"]
-    return max(1, min(assessment.target_level, services.get_achieved_level(assessment) or 1))
+        wanted_states = (LevelReview.STATUS_RETURNED, services.STATE_RECTIFY, services.STATE_DRAFT, services.STATE_READY)
+    for wanted in wanted_states:
+        for state in states:
+            if state["state"] == wanted:
+                return state["level"]
+    return max(1, min(_max_view_level(assessment), services.get_achieved_level(assessment) or 1))
+
+
+def _max_view_level(assessment):
+    """逐级审核方式只看到目标等级；专家评审方式全部等级都要填写。"""
+    return assessment.sys.max_level if assessment.is_expert_mode else assessment.target_level
 
 
 @login_required
@@ -239,7 +252,7 @@ def assessment_detail(request, project_id, system):
         view_level = int(request.GET.get("level") or _default_level(assessment, states, admin))
     except (TypeError, ValueError):
         view_level = 1
-    view_level = max(1, min(assessment.target_level, view_level))
+    view_level = max(1, min(_max_view_level(assessment), view_level))
     current_state = states[view_level - 1]
 
     items = list(
@@ -253,8 +266,14 @@ def assessment_detail(request, project_id, system):
         model_name="CheckItem", object_id__in=[str(item.id) for item in items]
     ).select_related("actor__enterprise")[:300]:
         logs_by_item.setdefault(log.object_id, []).append(log)
+    level_editable = owner and services.is_level_editable(assessment, view_level, reviews)
+    editable_ids = review_services.editable_item_ids(assessment) if assessment.is_expert_mode else None
+    feedback = review_services.item_feedback_map(assessment) if assessment.is_expert_mode else {}
     for item in items:
         item.history = logs_by_item.get(str(item.id), [])
+        # 专家评审整改阶段按条目开放：只能改上一轮判为不通过的条目
+        item.can_edit = level_editable and (editable_ids is None or item.id in editable_ids)
+        item.expert_feedback = feedback.get(item.id)
 
     groups = []
     for track, label in CheckItem.TRACK_CHOICES:
@@ -286,7 +305,7 @@ def assessment_detail(request, project_id, system):
             for level in services.get_returnable_levels(assessment, reviews)
         ]
 
-    item_editable = owner and services.is_level_editable(assessment, view_level, reviews)
+    item_editable = level_editable
     admin_can_edit_text = admin and services.can_admin_edit_text(assessment, view_level, reviews)
     pending_target = services.get_pending_target_request(assessment)
     last_target = services.get_last_target_request(assessment)
@@ -325,7 +344,9 @@ def assessment_detail(request, project_id, system):
             "review_attention": review_attention,
             "returnable": returnable,
             "resubmitted_reviews": [reviews[level] for level in submitted_levels if reviews[level].comment],
-            "ready_for_report": achieved >= assessment.target_level,
+            "ready_for_report": services.ready_for_report(assessment, reviews),
+            "expert_panel": review_services.panel_context(assessment, request.user, admin, owner),
+            "max_view_level": _max_view_level(assessment),
             "reopen_item": request.GET.get("item", ""),
             "open_modal": open_modal,
             "admin_can_edit_text": admin_can_edit_text,
@@ -344,8 +365,7 @@ def assessment_detail(request, project_id, system):
 def _get_item_or_404(request, item_id):
     item = get_object_or_404(CheckItem.objects.select_related("assessment__project"), pk=item_id)
     _ensure_system_enabled(item.assessment.system)
-    project = item.assessment.project
-    if not (is_admin(request.user) or is_project_owner(request.user, project)):
+    if not can_view_project(request.user, item.assessment.project):
         raise Http404("条目不存在。")
     return item
 
@@ -504,3 +524,68 @@ def target_reject_view(request, request_id):
     except (ValidationError, PermissionDenied) as exc:
         messages.error(request, _errors(exc))
     return redirect(_assessment_url(change.assessment.project_id, change.assessment.system))
+
+
+# ---------------------------------------------------------------------------
+# 项目删除与回收站
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def project_delete(request, project_id):
+    project = get_visible_project_or_404(request.user, project_id)
+    try:
+        if request.POST.get("confirm") != "1":
+            raise ValidationError("请先勾选确认删除。")
+        services.delete_project(project, request.user, request.POST.get("reason"))
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+        return redirect("evaluations:project_home", project_id=project.id)
+    if is_admin(request.user):
+        messages.success(request, f"项目「{project.name}」已移入回收站，企业会收到删除通知。")
+    else:
+        messages.success(request, f"项目「{project.name}」已删除。")
+    return redirect("evaluations:trl_list")
+
+
+@admin_required
+def recycle_bin(request):
+    projects = (
+        EvaluationProject.all_objects.filter(deleted_at__isnull=False)
+        .select_related("owner__enterprise", "deleted_by__enterprise")
+        .prefetch_related("assessments")
+        .order_by("-deleted_at")
+    )
+    return render(request, "evaluations/recycle_bin.html", {"projects": projects, "active_nav": "trl"})
+
+
+def _get_deleted_project_or_404(project_id):
+    return get_object_or_404(EvaluationProject.all_objects.filter(deleted_at__isnull=False), pk=project_id)
+
+
+@admin_required
+@require_POST
+def recycle_restore(request, project_id):
+    project = _get_deleted_project_or_404(project_id)
+    try:
+        services.restore_project(project, request.user)
+        messages.success(request, f"项目「{project.name}」已恢复，企业会收到恢复通知。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect("evaluations:recycle_bin")
+
+
+@admin_required
+@require_POST
+def recycle_purge(request, project_id):
+    project = _get_deleted_project_or_404(project_id)
+    name = project.name
+    try:
+        if request.POST.get("confirm") != "1":
+            raise ValidationError("请先勾选确认彻底删除。")
+        services.purge_project(project, request.user)
+        messages.success(request, f"项目「{name}」已彻底删除，审计日志仍保留其操作记录。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect("evaluations:recycle_bin")

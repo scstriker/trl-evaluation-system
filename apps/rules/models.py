@@ -48,3 +48,17 @@ class RuleItem(models.Model):
 
     def __str__(self):
         return f"{self.system.upper()}{self.level}-{self.get_track_display()}-{self.seq}"
+
+
+class Specialty(models.Model):
+    """技术领域词表：项目所属领域与专家专业领域共用，分配专家时按领域筛选。"""
+
+    code = models.SlugField(max_length=32, unique=True)
+    name = models.CharField("技术领域", max_length=64, unique=True)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.name

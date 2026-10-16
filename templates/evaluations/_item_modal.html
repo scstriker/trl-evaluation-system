@@ -17,6 +17,9 @@
       {% if item.review_comment %}
       <div class="alert warning" style="margin-bottom:16px"><strong>评价机构审核意见：</strong>{{ item.review_comment }}</div>
       {% endif %}
+      {% if item.expert_feedback %}
+      <div class="alert warning" style="margin-bottom:16px"><strong>第 {{ item.expert_feedback.round.number }} 轮专家评审终审{% if item_editable %}整改要求{% else %}意见{% endif %}：</strong><span class="prewrap">{{ item.expert_feedback.feedback }}</span></div>
+      {% endif %}
 
       {% if item_editable %}
       <form method="post" action="{% url 'evaluations:item_evaluate' item.id %}" class="form-grid" data-eval-form data-dirty-guard>
@@ -67,7 +70,9 @@
           {% elif item.result == 'not_applicable' %}<span class="tag neutral">不适用</span>
           {% else %}<span class="tag outline">未填写</span>{% endif %}
           {% if current_state.state == 'passed' %}<span class="small muted">（本级已审核通过，内容冻结）</span>
-          {% elif current_state.state == 'submitted' %}<span class="small muted">（本级已提交，等待审核）</span>{% endif %}
+          {% elif current_state.state == 'submitted' %}<span class="small muted">（本级已提交，等待审核）</span>
+          {% elif current_state.state == 'expert_review' %}<span class="small muted">（专家评审中，内容冻结）</span>
+          {% elif current_state.state == 'rectify' %}<span class="small muted">（该条目已通过，整改期间不能修改）</span>{% endif %}
         </div>
         {% if not admin_can_edit_text %}
         {% if item.statement %}<div class="field"><label class="field-label">满足情况说明</label><p class="mt-0 mb-0 prewrap">{{ item.statement }}</p></div>{% endif %}

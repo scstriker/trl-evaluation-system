@@ -13,4 +13,7 @@ urlpatterns = [
     path("requests/<uuid:request_id>/approve/", views.approve_request, name="approve_request"),
     path("requests/<uuid:request_id>/reject/", views.reject_request, name="reject_request"),
     path("<uuid:report_id>/download/", views.download_report, name="download_report"),
+    path("<uuid:report_id>/download.pdf", views.download_report_pdf, name="download_report_pdf"),
+    path("<uuid:report_id>/make-pdf/", views.make_pdf, name="make_pdf"),
+    path("projects/<uuid:project_id>/front-matter/", views.front_matter_edit, name="front_matter"),
 ]

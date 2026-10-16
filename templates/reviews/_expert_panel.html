@@ -1,0 +1,170 @@
+{# 评价页“专家评审”面板：需要 expert_panel（reviews.services.panel_context）/ assessment / sys / project / is_admin / is_owner #}
+{% load ui %}
+{% with p=expert_panel r=expert_panel.round %}
+{% if p.is_expert_mode or p.can_switch %}
+<div class="card expert-panel{% if r and r.status == 'rectifying' %} attention-panel{% endif %}" id="expert-panel">
+  <div class="card-head">
+    <h2>专家评审{% if r %} · 第 {{ r.number }} 轮{% endif %}</h2>
+    <div class="flex">
+      {% if not p.is_expert_mode %}<span class="tag neutral">当前：管理员逐级审核</span>
+      {% elif not r %}<span class="tag info">评审方式：专家评审</span>
+      {% elif r.status == 'assigning' %}<span class="tag info">待组建专家组</span>
+      {% elif r.status == 'reviewing' %}<span class="tag info">专家评审中</span>
+      {% elif r.status == 'ruling' %}<span class="tag info">{% if is_admin %}待终审{% else %}专家评审中{% endif %}</span>
+      {% elif r.status == 'rectifying' %}<span class="tag warning">整改中</span>
+      {% else %}<span class="tag success">评审已结束</span>{% endif %}
+      {% if p.rounds_count %}<a class="btn ghost sm" href="{% url 'reviews:history' assessment.id %}">评审记录</a>{% endif %}
+      {% if is_admin and r %}<a class="btn secondary sm" href="{% url 'reviews:round_detail' r.id %}">评审管理 →</a>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    {% if not p.is_expert_mode %}
+      <p class="mt-0 mb-0">本评价目前按管理员逐级审核：填到目标等级即可逐级提交。也可以改为<strong>专家评审</strong>：填写 {{ sys.abbr }} 1~{{ sys.max_level }} 全部等级后申报，由 3 位领域专家逐条评审，评价机构终审。提交审核前可以随时切换。</p>
+      <div class="flex" style="margin-top:12px"><button class="btn secondary sm" type="button" data-modal-open="mode-modal">改为专家评审…</button></div>
+
+    {% elif not r %}
+      <p class="mt-0">专家评审需要先填写全部等级（{{ sys.abbr }} 1~{{ sys.max_level }}）的条目，不论最终能达到哪一级。申报后由评价机构组建 3 人专家组逐条评审，评审期间条目冻结。</p>
+      <div class="flex" style="gap:12px;flex-wrap:nowrap;max-width:560px">
+        <div class="progress" style="flex:1"><div class="bar" style="width:{% widthratio p.progress.completed p.progress.total 100 %}%"></div></div>
+        <span class="progress-label">已填 {{ p.progress.completed }}/{{ p.progress.total }} 条{% if p.progress.missing %}，还剩 {{ p.progress.missing }} 条{% endif %}</span>
+      </div>
+      <div class="flex" style="margin-top:16px">
+        {% if p.can_apply %}
+        <button class="btn {% if p.progress.missing %}secondary{% else %}primary{% endif %}" type="button" data-modal-open="apply-modal" {% if p.progress.missing %}disabled title="请先填完全部条目"{% endif %}>
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> 申报专家评审…
+        </button>
+        {% elif is_admin %}<span class="small muted">等待企业填写全部条目并申报。</span>{% endif %}
+        {% if p.can_switch %}<button class="btn ghost sm" type="button" data-modal-open="mode-modal">改回管理员逐级审核…</button>{% endif %}
+      </div>
+
+    {% elif r.status == 'assigning' or r.status == 'reviewing' or r.status == 'ruling' %}
+      <p class="mt-0 mb-0">
+        第 {{ r.number }} 轮于 {{ r.submitted_at|date:"Y-m-d H:i" }} 提交，评审 {{ r.items.count }} 条。
+        {% if r.status == 'assigning' %}评价机构正在组建专家组（已确定 {{ p.slots_filled }}/3 位）。
+        {% else %}专家组 3 位专家{% if is_admin %}已提交 {{ p.submitted_count }}/3 份意见{% else %}正在逐条评审{% endif %}。{% endif %}
+        评审期间条目冻结，终审结果出来后会通过站内私信通知{% if is_owner %}你{% else %}企业{% endif %}。
+      </p>
+      {% if is_admin and p.assignments %}
+      <div class="slot-mini">
+        {% for a in p.assignments %}
+        <span class="tag {% if a.status == 'submitted' %}success{% elif a.is_overdue %}warning{% else %}neutral{% endif %}">席位 {{ a.slot }} · {{ a.expert.expert_profile.name }} · {% if a.is_overdue %}逾期 {{ a.overdue_days }} 天{% else %}{{ a.get_status_display }}{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    {% elif r.status == 'rectifying' %}
+      <div class="alert warning mb-0">
+        <strong>第 {{ r.number }} 轮终审：{{ p.fails|length }} 条需整改，请于 {{ r.rectify_due_at|date:"Y-m-d H:i" }} 前提交整改。</strong>
+        {% if r.rectify_overdue %}<span class="tag warning">已逾期</span>{% endif %}
+        {% if r.feedback_summary %}<div style="margin-top:6px">终审意见：{{ r.feedback_summary }}</div>{% endif %}
+        <div class="small" style="margin-top:6px">只有下列条目可以修改（包括补充佐证材料）。已通过的条目保持冻结。修改完成后点击“提交整改”，进入下一轮复评。</div>
+      </div>
+      <table class="data" style="margin-top:12px">
+        <thead><tr><th class="nowrap">条目</th><th>整改要求</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for ri in p.fails %}
+          <tr>
+            <td class="nowrap mono">{{ ri.check_item.code }}</td>
+            <td class="prewrap">{{ ri.feedback }}</td>
+            <td class="nowrap"><a class="btn ghost sm" href="?level={{ ri.check_item.level }}&item={{ ri.check_item_id }}">去修改</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if p.can_resubmit %}
+      <div class="flex" style="margin-top:16px"><button class="btn primary" type="button" data-modal-open="resubmit-modal">提交整改…</button></div>
+      {% endif %}
+
+    {% else %}
+      <p class="mt-0 mb-0">
+        专家评审已结束（共 {{ p.rounds_count }} 轮）：{{ r.get_outcome_display }}。{% if r.feedback_summary %}终审意见：{{ r.feedback_summary }}{% endif %}
+        {% if is_owner %}评价机构将据此出具评价报告。{% endif %}
+      </p>
+      {% if p.fails %}
+      <table class="data" style="margin-top:12px">
+        <thead><tr><th class="nowrap">未通过条目</th><th>终审意见</th></tr></thead>
+        <tbody>{% for ri in p.fails %}<tr><td class="nowrap mono">{{ ri.check_item.code }}</td><td class="prewrap">{{ ri.feedback }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# ---- 切换评审方式 ---- #}
+{% if p.can_switch %}
+<div class="modal-backdrop" id="mode-modal" role="dialog" aria-modal="true" aria-labelledby="mode-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="mode-title">{% if p.is_expert_mode %}改回管理员逐级审核{% else %}改为专家评审{% endif %}</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:set_mode' assessment.id %}">
+      {% csrf_token %}
+      <input type="hidden" name="mode" value="{% if p.is_expert_mode %}direct{% else %}expert{% endif %}">
+      <div class="modal-body">
+        <table class="data">
+          <thead><tr><th></th><th>管理员逐级审核</th><th>专家评审</th></tr></thead>
+          <tbody>
+            <tr><th>填写范围</th><td>目标等级以内</td><td>{{ sys.abbr }} 1~{{ sys.max_level }} 全部等级</td></tr>
+            <tr><th>提交方式</th><td>逐级或一次提交到目标级</td><td>全部填完后一次申报</td></tr>
+            <tr><th>评审</th><td>评价机构逐级审核通过或退回</td><td>3 位领域专家逐条评审，评价机构终审</td></tr>
+            <tr><th>修改</th><td>被退回的级别可修改</td><td>按轮次整改，只改未通过的条目</td></tr>
+          </tbody>
+        </table>
+        <p class="small muted">已填写的内容都会保留。提交审核或申报专家评审后不能再切换。</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn primary" type="submit">确认{% if p.is_expert_mode %}改回逐级审核{% else %}改为专家评审{% endif %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ---- 申报专家评审 ---- #}
+{% if p.can_apply %}
+<div class="modal-backdrop" id="apply-modal" role="dialog" aria-modal="true" aria-labelledby="apply-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="apply-title">申报专家评审 · {{ sys.name }}评价</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:apply' assessment.id %}">
+      {% csrf_token %}
+      <div class="modal-body">
+        <p class="mt-0">申报后，系统把全部 {{ p.progress.total }} 条的自评内容和佐证材料存为“第 1 轮提交留档”，评价机构组建 3 人专家组逐条评审。<strong>评审期间所有条目冻结</strong>；终审后如有未通过的条目，只需整改这些条目。</p>
+        {% if not project.specialty %}<div class="alert warning">项目还没有选择“所属技术领域”，评价机构将按项目名称和应用领域选择专家。</div>{% endif %}
+        <label class="check-line">
+          <input type="checkbox" name="confirm" value="1" required>
+          <span>我确认所填写的自评内容与上传的佐证材料真实、准确。</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>再检查一下</button>
+        <button class="btn primary" type="submit">确认申报</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ---- 提交整改 ---- #}
+{% if p.can_resubmit %}
+<div class="modal-backdrop" id="resubmit-modal" role="dialog" aria-modal="true" aria-labelledby="resubmit-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="resubmit-title">提交整改 · 第 {{ r.number }} 轮</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:resubmit' r.id %}">
+      {% csrf_token %}
+      <div class="modal-body">
+        <p class="mt-0">提交后进入第 {{ r.number|add:1 }} 轮复评，专家只复评下列 {{ p.fails|length }} 条；本轮的修改内容存为新的提交留档，上一轮的留档保持不变。</p>
+        <div class="attention"><div>{% for ri in p.fails %}<span class="code-link">{{ ri.check_item.code }}</span>{% endfor %}</div></div>
+        <label class="check-line" style="margin-top:16px">
+          <input type="checkbox" name="confirm" value="1" required>
+          <span>我确认已按整改要求逐条修改，并补充了相应的佐证材料。</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>再检查一下</button>
+        <button class="btn primary" type="submit">确认提交整改</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endwith %}

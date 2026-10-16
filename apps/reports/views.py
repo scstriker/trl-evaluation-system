@@ -8,18 +8,24 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import (
+    admin_required,
     can_edit_project_info,
     can_generate_report,
     can_view_project,
     get_visible_project_or_404,
     is_admin,
+    is_expert,
     is_project_owner,
     visible_projects,
 )
 from apps.evaluations.forms import ProjectInfoForm, save_team_formset, team_formset
 from apps.evaluations.models import Assessment, EvaluationTeamMember
-from apps.evaluations.services import get_achieved_level, system_enabled
+from apps.evaluations.services import ready_for_report, system_enabled
+from apps.accounts.models import SystemConfig
+from apps.audit.models import AuditLog
 from apps.reports import services
+from apps.reports.pdf import LABELS as PDF_LABELS
+from apps.reports.pdf import detect_converter
 from apps.reports.models import Report, ReportRequest
 
 
@@ -93,6 +99,8 @@ def report_preview(request, project_id):
             "summaries": [part["assessment"] for part in report["parts"]],
             "active_nav": "reports",
             "assessment_tabs": {a.system for a in assessments},
+            "pdf_tool": PDF_LABELS.get(detect_converter()) if admin else "",
+            "seal_ready": bool(SystemConfig.get().seal_image),
         },
     )
 
@@ -201,6 +209,8 @@ def download_report(request, report_id):
 
 @login_required
 def report_list(request):
+    if is_expert(request.user):
+        return redirect("accounts:home")
     admin = is_admin(request.user)
     projects = visible_projects(request.user)
     reports = Report.objects.filter(project__in=projects).select_related("project", "generated_by__enterprise")
@@ -213,7 +223,7 @@ def report_list(request):
     for assessment in Assessment.objects.filter(project__in=projects, status=Assessment.STATUS_IN_PROGRESS).select_related(
         "project"
     ):
-        if system_enabled(assessment.system) and get_achieved_level(assessment) >= assessment.target_level:
+        if system_enabled(assessment.system) and ready_for_report(assessment):
             waiting.append(assessment)
     return render(
         request,
@@ -227,3 +237,90 @@ def report_list(request):
             "active_nav": "reports",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# 报告前置信息（评价机构按固定模板逐节填写）与 PDF
+# ---------------------------------------------------------------------------
+
+
+@admin_required
+def front_matter_edit(request, project_id):
+    from apps.reports.forms import FrontMatterForm, ModuleFormSet
+
+    project = get_visible_project_or_404(request.user, project_id)
+    front_matter = services.get_front_matter(project)
+    report_type = request.GET.get("type") or request.POST.get("type") or Report.TYPE_TRL
+    form = FrontMatterForm(request.POST or None, instance=front_matter)
+    modules = ModuleFormSet(request.POST or None, instance=front_matter, prefix="modules")
+    if request.method == "POST":
+        if form.is_valid() and modules.is_valid():
+            with transaction.atomic():
+                front_matter = form.save(commit=False)
+                front_matter.updated_by = request.user
+                front_matter.save()
+                saved = modules.save(commit=False)
+                for order, module in enumerate(saved, start=1):
+                    module.order = module.order or order
+                    module.save()
+                for module in modules.deleted_objects:
+                    module.delete()
+                for order, module in enumerate(front_matter.modules.all(), start=1):
+                    if module.order != order:
+                        module.order = order
+                        module.save(update_fields=["order"])
+                AuditLog.objects.create(
+                    actor=request.user,
+                    action="report.front_matter",
+                    model_name="ReportFrontMatter",
+                    object_id=str(front_matter.pk),
+                    object_repr="报告前置信息",
+                    project=project,
+                    after={"changed": form.changed_data, "modules": front_matter.modules.count()},
+                )
+            messages.success(request, "报告前置信息已保存。预览和下一次生成的报告会使用新内容。")
+            return redirect(_preview_url(project.id, report_type))
+        messages.error(request, "保存失败：关键技术 / 模块的名称为必填项，日期格式为 年-月-日。")
+    defaults = services._default_sections(
+        project, report_type, services.build_report(project, report_type)["parts"]
+    ) if project.assessments.exists() else {}
+    return render(
+        request,
+        "reports/front_matter.html",
+        {
+            "project": project,
+            "form": form,
+            "modules": modules,
+            "defaults": defaults,
+            "report_type": report_type,
+            "chapters": [
+                ("1 概况", ["s1_1_1", "s1_1_2", "s1_1_3", "s1_1_4", "s1_1_5", "s1_2_1", "s1_2_2", "s1_2_3", "s1_2_4"]),
+                ("2 评价实施情况", ["s2_1", "s2_3", "s2_4"]),
+                ("3 评价对象研发信息", ["s3_1", "s3_4_software"]),
+            ],
+            "active_nav": "reports",
+            "tabs": {a.system for a in project.assessments.all()},
+        },
+    )
+
+
+@login_required
+def download_report_pdf(request, report_id):
+    report = get_object_or_404(Report.objects.select_related("project"), pk=report_id)
+    if not can_view_project(request.user, report.project) or not report.pdf_file:
+        raise Http404("报告不存在。")
+    return FileResponse(report.pdf_file.open("rb"), as_attachment=True, filename=report.pdf_filename)
+
+
+@login_required
+@require_POST
+def make_pdf(request, report_id):
+    report = get_object_or_404(Report.objects.select_related("project"), pk=report_id)
+    if not can_view_project(request.user, report.project):
+        raise Http404("报告不存在。")
+    try:
+        services.make_report_pdf(report, request.user)
+        messages.success(request, f"已为 V{report.version} 生成 PDF。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect(_preview_url(report.project_id, report.report_type))

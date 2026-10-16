@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}报告前置信息 · {{ project.name }}{% endblock %}
+{% block header_title %}评价报告{% endblock %}
+
+{% block content %}
+<div class="page">
+  {% include "evaluations/_project_head.html" with tab="report" %}
+
+  <div class="alert info">
+    报告按评价机构的固定模板生成：封面、扉页和第 1～3 章是前置信息，在这里逐节填写；第 4 章起的评价准则、等级评价、总结和附录由系统按审核结果自动拼接。
+    每节可以写多段，换行即分段。留空的小节在报告中只保留标题；2.1、2.3、2.4 和 1.2.1 留空时使用系统生成的文字。
+  </div>
+
+  <form method="post" novalidate data-dirty-guard>
+    {% csrf_token %}<input type="hidden" name="type" value="{{ report_type }}">
+    {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
+
+    <div class="card">
+      <div class="card-head"><h2>封面与扉页</h2><span class="small muted">委托单位：{{ project.applicant }} · 评价报告出具单位：{{ project.issuer }}</span></div>
+      <div class="card-body form-grid">
+        <div class="grid-2">
+          {% for name in "compiled_by checked_by approved_by issue_date"|split_words %}{% with field=form|get_field:name %}
+          <div class="field">
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if name == "issue_date" %}<div class="hint">留空则取生成当天，封面显示为“二〇二六年十月”格式</div>{% endif %}
+            {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+          </div>
+          {% endwith %}{% endfor %}
+        </div>
+        <div class="field">
+          <label class="field-label" for="{{ form.standard_version.id_for_label }}">{{ form.standard_version.label }}</label>
+          {{ form.standard_version }}
+          <div class="hint">填写后替换 2.2 评价依据中评价细则的名称，例如：《技术就绪度评价标准及细则》（2026 年版）</div>
+        </div>
+      </div>
+    </div>
+
+    {% for title, names in chapters %}
+    <div class="card">
+      <div class="card-head"><h2>{{ title }}</h2></div>
+      <div class="card-body form-grid">
+        {% for name in names %}{% with field=form|get_field:name %}
+        <div class="field">
+          <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% with default=defaults|get_item:name %}{% if default %}<div class="hint">留空时使用：{{ default|truncatechars:120 }}</div>{% endif %}{% endwith %}
+        </div>
+        {% endwith %}{% endfor %}
+      </div>
+    </div>
+    {% if title == "3 评价对象研发信息" %}
+    <div class="card">
+      <div class="card-head"><h2>3.2～3.4 关键技术 / 模块</h2><span class="small muted">每个关键技术 / 模块在 3.2 设计、3.3 试制、3.4 验证中各占一小节，按填写顺序编号</span></div>
+      <div class="card-body form-grid">
+        {{ modules.management_form }}
+        {% for mf in modules %}
+        <div class="module-block">
+          {{ mf.id }}
+          <div class="flex-between">
+            <strong>关键技术 / 模块 {{ forloop.counter }}</strong>
+            {% if mf.instance.pk %}<label class="check-line small">{{ mf.DELETE }} 删除</label>{% endif %}
+          </div>
+          <div class="field"><label class="field-label" for="{{ mf.name.id_for_label }}">名称</label>{{ mf.name }}{% if mf.name.errors %}<div class="error">{{ mf.name.errors|join:"；" }}</div>{% endif %}</div>
+          <div class="field"><label class="field-label" for="{{ mf.design.id_for_label }}">设计情况（3.2）</label>{{ mf.design }}</div>
+          <div class="field"><label class="field-label" for="{{ mf.trial.id_for_label }}">试制情况（3.3）</label>{{ mf.trial }}</div>
+          <div class="field"><label class="field-label" for="{{ mf.verification.id_for_label }}">验证情况（3.4）</label>{{ mf.verification }}</div>
+        </div>
+        {% endfor %}
+        <div class="hint">保存后会再留一个空白模块位置，可继续添加。</div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <div class="flex" style="justify-content:flex-end;margin-top:var(--space-5)">
+      <a class="btn secondary" href="{% url 'reports:report_preview' project.id %}?type={{ report_type }}">返回报告预览</a>
+      <button class="btn primary" type="submit">保存前置信息</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

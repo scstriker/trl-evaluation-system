@@ -21,6 +21,9 @@ INSTALLED_APPS = [
     "apps.evaluations",
     "apps.evidence",
     "apps.reports",
+    "apps.notifications",
+    "apps.experts",
+    "apps.reviews",
 ]
 
 MIDDLEWARE = [
@@ -29,6 +32,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.reviews.middleware.DeadlineCheckMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -77,7 +81,14 @@ MEDIA_ROOT = Path(os.getenv("TRL_MEDIA_ROOT", BASE_DIR / "media"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "/login/"
-LOGIN_REDIRECT_URL = "/trl/"
+LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
 MAX_EVIDENCE_FILE_SIZE_MB = int(os.getenv("MAX_EVIDENCE_FILE_SIZE_MB", "50"))
+
+# 期限检查：已登录用户访问页面时顺带执行，间隔秒数
+DEADLINE_CHECK_ENABLED = os.getenv("TRL_DEADLINE_CHECK", "1") == "1"
+DEADLINE_CHECK_INTERVAL = 600
+
+# 报告 PDF 转换方式：auto（有 Word 用 Word，否则 LibreOffice）/ word / libreoffice / none
+REPORT_PDF_CONVERTER = os.getenv("TRL_PDF_CONVERTER", "auto")

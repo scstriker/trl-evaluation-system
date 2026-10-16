@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <h1>账号信息</h1>
-      <div class="sub">{% if profile %}企业注册信息由评价机构审核确认，如需变更请联系评价机构管理员。{% else %}评价机构管理员账号。{% endif %}</div>
+      <div class="sub">{% if profile %}企业注册信息由评价机构审核确认，如需变更请联系评价机构管理员。{% elif current_is_expert %}评审专家账号由评价机构开通，档案信息如需变更请联系评价机构。{% else %}评价机构管理员账号。{% endif %}</div>
     </div>
   </div>
 
@@ -19,6 +19,11 @@
           <tbody>
             <tr><th>用户名</th><td class="mono">{{ request.user.username }}</td></tr>
             <tr><th>账号类型</th><td>{{ current_role_label }}</td></tr>
+            {% if request.user.expert_profile %}
+            <tr><th>姓名</th><td>{{ request.user.expert_profile.name }}</td></tr>
+            <tr><th>工作单位</th><td>{{ request.user.expert_profile.organization }}</td></tr>
+            <tr><th>专家档案</th><td><a href="{% url 'experts:expert_detail' request.user.expert_profile.pk %}">查看我的档案</a></td></tr>
+            {% endif %}
             {% if profile %}
             <tr><th>企业中文全称</th><td>{{ profile.company_name }}</td></tr>
             <tr><th>统一社会信用代码</th><td class="mono">{{ profile.credit_code }}</td></tr>

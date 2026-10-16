@@ -52,7 +52,8 @@ def test_trl_report_blocked_then_generated(enterprise, admin_user):
     assert report1.version == 1 and report1.trl_level == 2 and report1.mrl_level is None
     assert report1.report_no.endswith("-TRL")
     text = _docx_text(report1)
-    assert "技术就绪度评价报告" in text and "技术类型" in text and "杜工" in text
+    assert "技术就绪度评价报告" in text and "委托单位：" in text and "杜工" in text
+    assert "1.1.1 任务来源" in text and "4 评价准则" in text and "5 技术就绪度评价" in text
     assert "轨道" not in text and "Demo" not in text
 
     services.reopen_assessment(assessment, admin_user)
@@ -78,7 +79,7 @@ def test_mrl_and_combined_reports(enterprise, admin_user, mrl_rules):
     assert combined.trl_level == 1 and combined.mrl_level == 2
     text = _docx_text(combined)
     assert "技术就绪度与制造成熟度综合评价报告" in text
-    assert "4 技术就绪度评价" in text and "5 制造成熟度评价" in text and "6 总结" in text
+    assert "5 技术就绪度评价" in text and "6 制造成熟度评价" in text and "7 总结" in text
 
 
 def test_report_type_unavailable_without_assessment(enterprise, admin_user):

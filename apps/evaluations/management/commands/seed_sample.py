@@ -18,11 +18,18 @@ from docx import Document
 from apps.accounts.forms import credit_code_check_char
 from apps.accounts.models import EnterpriseProfile
 from apps.evaluations import services
-from apps.evaluations.models import CheckItem, EvaluationProject, EvaluationTeamMember
+from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, EvaluationTeamMember
 from apps.evidence.services import upload_evidence_file
+from apps.experts.sample_data import seed_sample_experts
+from apps.notifications.models import Notification
 from apps.reports.models import Report
-from apps.reports.services import approve_request, request_export
-from apps.rules.models import RuleItem
+from apps.reports.models import ReportModule
+from apps.reports.services import approve_request, get_front_matter, request_export
+from apps.reviews import services as review_services
+from apps.reviews import fees
+from apps.reviews.deadlines import check_deadlines
+from apps.reviews.models import ExpertAssignment, RemunerationRecord
+from apps.rules.models import RuleItem, Specialty
 from apps.rules.systems import TRL
 
 INITIAL_PASSWORD = "Trl@2026"
@@ -114,6 +121,14 @@ STATEMENTS = {
 
 DEFAULT_STATEMENT = "经评价组核查相关佐证材料，该具体化等级条件已满足。"
 
+# 专家评审样例中判“不通过”的条目及建议
+FAIL_SUGGESTIONS = {
+    "TRL5-HW-2": "请补充模拟使用环境下的关键性能测试报告，并说明测试条件与实际工况的对应关系。",
+    "TRL5-HW-3": "请补充关键部件在模拟环境下的可靠性试验记录（含试验条件、样本数量和失效判据）。",
+    "TRL6-HW-2": "请补充系统级原型在相关环境中的验证报告，现有材料只覆盖部件级验证。",
+    "TRL7-HW-1": "请补充在用户现场连续运行的试用记录和用户使用报告。",
+}
+
 
 def _evidence_docx(title):
     document = Document()
@@ -164,10 +179,16 @@ class Command(BaseCommand):
                 },
             )
             users[username] = user
-        EvaluationProject.objects.filter(owner__in=users.values()).delete()
+        sample_projects = EvaluationProject.all_objects.filter(owner__in=users.values())
+        # 重建样例项目前清掉与之相关的站内私信，避免收件箱残留旧消息
+        Notification.objects.filter(project__in=sample_projects).delete()
+        sample_projects.delete()
         self.stdout.write(self.style.SUCCESS(f"样例企业账号：{', '.join(users)}（初始密码 {INITIAL_PASSWORD}；jingce 为待审核注册）"))
 
         gangyan, hexin, zhongnan = users["gangyan"], users["hexin"], users["zhongnan"]
+
+        created = seed_sample_experts(admin)
+        self.stdout.write(self.style.SUCCESS(f"样例评审专家：expert01～expert20（新建 {created} 位，初始密码 {INITIAL_PASSWORD}）"))
 
         # ① 填写中：已通过 1~3 级，第 4 级部分填写
         p1 = self._create(
@@ -176,6 +197,7 @@ class Command(BaseCommand):
             domain="稀土湿法冶金 · 在线检测仪表",
             tech_type=EvaluationProject.TECH_EQUIPMENT,
             target=8,
+            specialty="instrument",
         )
         self._fill(p1, gangyan, levels=[1, 2, 3])
         self._submit_and_pass(p1, gangyan, admin, up_to=3)
@@ -189,6 +211,7 @@ class Command(BaseCommand):
             domain="稀土湿法冶金 · 取样与预处理",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=4,
+            specialty="instrument",
         )
         self._fill(p2, gangyan, levels=[1, 2, 3, 4])
         services.submit_levels(p2.get_assessment(TRL), gangyan, 4)
@@ -208,6 +231,7 @@ class Command(BaseCommand):
             domain="X 射线探测器 · 核心器件",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=4,
+            specialty="optics",
         )
         self._fill(p3, hexin, levels=[1, 2, 3, 4])
         self._submit_and_pass(p3, hexin, admin, up_to=4)
@@ -222,6 +246,7 @@ class Command(BaseCommand):
             domain="X 射线源 · 核心部件",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=3,
+            specialty="optics",
         )
         self._fill(p4, hexin, levels=[1, 2, 3])
         assessment = p4.get_assessment(TRL)
@@ -238,6 +263,7 @@ class Command(BaseCommand):
             domain="工业软件 · 光谱数据解析",
             tech_type=EvaluationProject.TECH_SOFTWARE,
             target=3,
+            specialty="software",
         )
         self._fill(p5, zhongnan, levels=[1, 2, 3])
         self._submit_and_pass(p5, zhongnan, admin, up_to=3)
@@ -257,12 +283,18 @@ class Command(BaseCommand):
             )
         )
 
+        self._expert_samples(admin, gangyan, hexin, zhongnan)
+        self.stdout.write(
+            self.style.SUCCESS("专家评审样例已生成：评审中（一位专家逾期）/ 整改中 / 评审结束并出具报告 各一个")
+        )
+
     # ------------------------------------------------------------------
-    def _create(self, owner, *, name, domain, tech_type, target):
+    def _create(self, owner, *, name, domain, tech_type, target, specialty=None):
         project = EvaluationProject(
             name=name,
             applicant=owner.enterprise.company_name,
             domain=domain,
+            specialty=Specialty.objects.filter(code=specialty).first(),
             tech_type=tech_type,
             overview_text=OVERVIEW_TEXT,
         )
@@ -309,3 +341,174 @@ class Command(BaseCommand):
         assessment = project.get_assessment(TRL)
         services.submit_levels(assessment, owner, up_to)
         services.pass_levels(assessment, admin, up_to)
+
+    # ------------------------------------------------------------------
+    # 专家评审样例
+    # ------------------------------------------------------------------
+    def _expert_fill(self, project, owner):
+        """专家评审方式：填写全部等级；每级第一条挂一份佐证，控制样例体积。"""
+        assessment = project.get_assessment(TRL)
+        review_services.set_review_mode(assessment, owner, Assessment.MODE_EXPERT)
+        seen_levels = set()
+        for item in assessment.items.order_by("level", "track", "seq"):
+            statement, support = STATEMENTS.get((item.level, item.track, item.seq), (DEFAULT_STATEMENT, ""))
+            if item.level not in seen_levels:
+                seen_levels.add(item.level)
+                title = support.split("；")[0].strip("《》") if support else f"第 {item.level} 级佐证材料"
+                upload_evidence_file(
+                    item,
+                    owner,
+                    SimpleUploadedFile(
+                        f"{title[:40]}.docx",
+                        _evidence_docx(title),
+                        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                )
+            services.evaluate_check_item(
+                item, owner, {"result": CheckItem.RESULT_SATISFIED, "statement": statement, "support_info": support}
+            )
+        return assessment
+
+    def _experts(self, *usernames):
+        return [User.objects.get(username=name) for name in usernames]
+
+    def _opinions(self, assignment, fails=(), draft_only=False, half=False):
+        items = review_services.task_items(assignment)
+        if half:
+            items = items[: len(items) // 2]
+        data = {}
+        for round_item in items:
+            code = round_item.check_item.code
+            if code in fails:
+                data[round_item.id] = {
+                    "verdict": "fail",
+                    "suggestion": FAIL_SUGGESTIONS.get(code, "请补充能直接证明该条件的第三方检测或试验报告。"),
+                    "comment": "现有佐证只能说明方案设计，尚不能证明该条件已经达成。",
+                }
+            else:
+                data[round_item.id] = {"verdict": "pass", "suggestion": "", "comment": "佐证材料与条件对应，满足要求。"}
+        review_services.save_opinions(assignment, assignment.expert, data, submit=not draft_only)
+
+    def _expert_samples(self, admin, gangyan, hexin, zhongnan):
+        # ⑥ 评审中：专家 A 已提交，专家 B 填了一半，专家 C 尚未接受且已逾期
+        p6 = self._create(
+            hexin,
+            name="SDD 硅漂移探测器",
+            domain="X 射线探测器 · 核心器件",
+            tech_type=EvaluationProject.TECH_HARDWARE,
+            target=6,
+            specialty="optics",
+        )
+        a6 = self._expert_fill(p6, hexin)
+        self._team(p6, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["hexin"])
+        r6 = review_services.apply_expert_review(a6, hexin)
+        review_services.assign_experts(r6, admin, [u.pk for u in self._experts("expert11", "expert12", "expert13")])
+        s1, s2, s3 = r6.assignments.order_by("slot")
+        review_services.respond_assignment(s1, s1.expert, True, pledge=True)
+        self._opinions(s1, fails={"TRL5-HW-2"})
+        review_services.respond_assignment(s2, s2.expert, True, pledge=True)
+        self._opinions(s2, draft_only=True, half=True)
+        # 专家 C 9 天前被分配、期限 7 天，至今未接受
+        backdated = timezone.now() - timezone.timedelta(days=9)
+        ExpertAssignment.objects.filter(pk=s3.pk).update(assigned_at=backdated, due_at=backdated + timezone.timedelta(days=7))
+
+        # ⑦ 整改中：第 1 轮终审 3 条不通过，整改期 10 天
+        p7 = self._create(
+            gangyan,
+            name="多流路在线自动进样装置",
+            domain="稀土湿法冶金 · 取样与预处理",
+            tech_type=EvaluationProject.TECH_HARDWARE,
+            target=6,
+            specialty="instrument",
+        )
+        a7 = self._expert_fill(p7, gangyan)
+        self._team(p7, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["gangyan"])
+        r7 = review_services.apply_expert_review(a7, gangyan)
+        review_services.assign_experts(r7, admin, [u.pk for u in self._experts("expert01", "expert02", "expert03")])
+        fails7 = ["TRL5-HW-3", "TRL6-HW-2", "TRL7-HW-1"]
+        for index, assignment in enumerate(r7.assignments.order_by("slot")):
+            review_services.respond_assignment(assignment, assignment.expert, True, pledge=True)
+            # 席位 3 认为 TRL6-HW-2 已满足：形成一条分歧
+            self._opinions(assignment, fails=fails7 if index < 2 else [fails7[0], fails7[2]])
+        r7.refresh_from_db()
+        review_services.confirm_unanimous(r7, admin)
+        for round_item in r7.items.select_related("check_item"):
+            code = round_item.check_item.code
+            if code in fails7:
+                review_services.rule_item(
+                    round_item,
+                    admin,
+                    "fail",
+                    reason="两位专家判不通过，佐证确有缺口" if code == "TRL6-HW-2" else "",
+                    feedback=FAIL_SUGGESTIONS[code],
+                )
+        review_services.finalize_round(r7, admin, "rectify", rectify_days=10, summary="整体研制工作扎实，3 条需补充验证证据后复评。")
+        # 劳务记录：填入样例金额，其中 2 条已结算
+        fee_records = list(RemunerationRecord.objects.filter(project=p7).order_by("id"))
+        for record in fee_records:
+            fees.update_record(record, admin, 800, "样例金额")
+        fees.settle_records([record.id for record in fee_records[:2]], admin)
+
+        # ⑧ 评审结束：软件类，第 1 轮全部通过，已出具报告
+        p8 = self._create(
+            zhongnan,
+            name="光谱数据智能解析软件",
+            domain="工业软件 · 光谱数据解析",
+            tech_type=EvaluationProject.TECH_SOFTWARE,
+            target=7,
+            specialty="software",
+        )
+        a8 = self._expert_fill(p8, zhongnan)
+        self._team(p8, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
+        r8 = review_services.apply_expert_review(a8, zhongnan)
+        review_services.assign_experts(r8, admin, [u.pk for u in self._experts("expert08", "expert09", "expert10")])
+        for assignment in r8.assignments.order_by("slot"):
+            review_services.respond_assignment(assignment, assignment.expert, True, pledge=True)
+            self._opinions(assignment)
+        r8.refresh_from_db()
+        review_services.confirm_unanimous(r8, admin)
+        review_services.finalize_round(r8, admin, "close", summary="软件各级条件均有充分佐证，同意通过。")
+        self._front_matter(p8)
+        approve_request(request_export(p8, Report.TYPE_TRL, zhongnan), admin)
+        # 生成逾期提醒（专家 C 已逾期）
+        check_deadlines()
+
+    def _front_matter(self, project):
+        """报告前置信息样例（光谱数据智能解析软件）。"""
+        front = get_front_matter(project)
+        front.compiled_by, front.checked_by, front.approved_by = "王工", "李工", "杜工"
+        front.standard_version = "《技术就绪度评价标准及细则》（2026 年版）"
+        front.s1_1_1 = (
+            "本项目来源于稀土萃取分离过程在线检测仪表研制任务，由中南大学承担配套软件的研发，"
+            "解决在线光谱数据量大、谱峰重叠严重、人工解析滞后等问题。"
+        )
+        front.s1_1_2 = "研制具备谱图自动解析、多流路数据管理和检测结果实时上传功能的光谱数据智能解析软件，支撑在线检测仪表连续运行。"
+        front.s1_1_3 = "17 种稀土元素同时解析；单次解析时间≤5 s；解析结果与实验室离线分析偏差≤3%；软件连续运行无故障时间≥720 h。"
+        front.s1_1_4 = "光谱数据智能解析软件 1 套，软件著作权 2 项，测试报告 1 份。"
+        front.s1_1_5 = (
+            "软件采用“采集—预处理—解析—发布”四层结构，提供谱图预处理、重叠峰解析、元素定量和结果发布功能，"
+            "可与在线检测仪表的控制系统通过标准接口交换数据。"
+        )
+        front.s1_2_1 = "软件已完成全部功能开发，在实验室和稀土分离企业现场完成联调与试运行。"
+        front.s1_2_2 = "主要技术指标均已达到任务书要求，其中单次解析时间实测 3.2 s。"
+        front.s1_2_4 = "完成需求分析、概要设计、详细设计、编码与测试全过程，形成配套开发文档。"
+        front.s3_1 = "光谱数据智能解析软件运行于在线检测仪表配套工控机，负责光谱数据的预处理、解析与结果发布。"
+        front.s3_4_software = "软件经第三方软件测评机构测试，功能、性能和可靠性指标满足要求。"
+        front.save()
+        ReportModule.objects.filter(front_matter=front).delete()
+        ReportModule.objects.create(
+            front_matter=front,
+            order=1,
+            name="重叠峰解析算法",
+            design="基于约束非负最小二乘的重叠峰解析方法，结合元素特征峰库自动识别谱峰。",
+            trial="在 6 类稀土混合料液样本上完成算法试制与参数整定。",
+            verification="与实验室离线分析结果比对，偏差均在 3% 以内。",
+        )
+        ReportModule.objects.create(
+            front_matter=front,
+            order=2,
+            name="多流路数据管理模块",
+            design="按流路组织检测数据，支持流路切换时的方法自动匹配。",
+            trial="在 15 路在线取样系统上完成联调。",
+            verification="现场连续运行 30 天，数据完整率 100%。",
+        )

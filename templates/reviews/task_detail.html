@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}评审 · {{ project.name }}{% endblock %}
+{% block header_title %}评审任务{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <div class="sub">{{ project.applicant }} · {{ project.get_tech_type_display }}{% if project.specialty %} · {{ project.specialty.name }}{% endif %} · {{ sys.name }}评价第 {{ round.number }} 轮{% if round.number > 1 %}（复评上一轮未通过的条目）{% endif %}</div>
+    </div>
+    <div class="actions"><a class="btn ghost sm" href="{% url 'reviews:task_list' %}">← 返回评审任务</a></div>
+  </div>
+
+  {% if assignment.status == 'invited' %}
+  <div class="alert warning">请先在“评审任务”列表中阅读保密与回避承诺并接受任务，再开始评审。</div>
+  {% elif assignment.status == 'submitted' %}
+  <div class="alert success"><strong>评审意见已于 {{ assignment.submitted_at|date:"Y-m-d H:i" }} 提交，不能再修改。</strong>评价机构汇总三位专家的意见后终审。</div>
+  {% else %}
+  <div class="alert info">
+    已给出结论 <strong>{{ filled }}/{{ total }}</strong> 条，截止 {{ assignment.due_at|date:"Y-m-d H:i" }}{% if assignment.is_overdue %} <span class="tag warning">已逾期 {{ assignment.overdue_days }} 天</span>{% endif %}。
+    按级填写并保存，全部填完后点击“提交评审意见”。判为不通过的条目，请写明满足建议或点评，评价机构据此形成整改要求。
+    <div class="flex" style="margin-top:10px"><button class="btn primary sm" type="button" data-modal-open="submit-modal" {% if missing or unexplained %}title="还有条目未填写完整，可打开查看"{% endif %}>提交评审意见…</button></div>
+  </div>
+  {% endif %}
+
+  {% if assignment.status != 'invited' %}
+  <div class="filter-tabs" aria-label="评审级别">
+    {% for t in level_tabs %}
+    <a href="?level={{ t.level }}" {% if t.level == level %}aria-current="true"{% endif %}>第 {{ t.level }} 级 <span>{{ t.filled }}/{{ t.total }}</span></a>
+    {% endfor %}
+  </div>
+
+  <form method="post" action="{% url 'reviews:task_save' assignment.id %}" {% if editable %}data-dirty-guard{% endif %}>
+    {% csrf_token %}
+    <input type="hidden" name="level" value="{{ level }}">
+    {% for ri in level_items %}
+    {% with item=ri.check_item %}
+    <div class="card review-item" id="ri-{{ ri.id }}">
+      <div class="card-head">
+        <h2><span class="mono">{{ item.code }}</span> <span class="small muted" style="font-weight:400">{{ item.get_track_display }} · 第 {{ item.level }} 级第 {{ item.seq }} 条</span></h2>
+        {% if ri.opinion.verdict == 'pass' %}<span class="tag success">已判通过</span>{% elif ri.opinion.verdict == 'fail' %}<span class="tag warning">已判不通过</span>{% else %}<span class="tag outline">未给结论</span>{% endif %}
+      </div>
+      <div class="card-body review-item-body">
+        <div class="review-col">
+          <div class="field"><label class="field-label">具体化等级条件</label><p class="mt-0 mb-0">{{ item.name }}</p><div class="hint">评价支撑信息要求：{{ item.evidence }}</div></div>
+          <div class="field" style="margin-top:12px"><label class="field-label">企业自评</label>
+            {% if ri.snap_result == 'satisfied' %}<span class="tag success">满足</span>{% elif ri.snap_result == 'not_satisfied' %}<span class="tag warning">不满足</span>{% elif ri.snap_result == 'not_applicable' %}<span class="tag neutral">不适用</span>{% else %}<span class="tag outline">未填写</span>{% endif %}
+            {% if ri.snap_statement %}<p class="prewrap" style="margin:8px 0 0">{{ ri.snap_statement }}</p>{% endif %}
+          </div>
+          {% if ri.snap_support_info %}<div class="field" style="margin-top:12px"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0 prewrap">{{ ri.snap_support_info }}</p></div>{% endif %}
+          <div class="field" style="margin-top:12px"><label class="field-label">佐证材料（{{ ri.evidence|length }}）</label>
+            <div class="evd-list">
+              {% for e in ri.evidence %}
+              <div class="evd-item">
+                <svg class="icon sm" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg>
+                <span class="fn">{{ e.name }}</span>
+                <span class="meta">{{ e.size|filesizeformat }}</span>
+                <span class="hash" title="SHA-256：{{ e.sha256 }}">{{ e.sha256|slice:":12" }}…</span>
+                {% if e.file %}<a class="btn ghost sm" href="{% url 'reviews:task_evidence' assignment.id e.id %}">下载</a>{% endif %}
+              </div>
+              {% empty %}<p class="small muted mt-0 mb-0">企业未上传佐证材料。</p>{% endfor %}
+            </div>
+          </div>
+          {% if ri.previous and ri.previous.final_result %}
+          <div class="alert warning" style="margin:12px 0 0"><strong>上一轮终审：{{ ri.previous.get_final_result_display }}。</strong>{% if ri.previous.feedback %}整改要求：{{ ri.previous.feedback }}{% endif %}</div>
+          {% endif %}
+        </div>
+        <div class="review-col opinion-col">
+          {% if editable %}
+          <div class="field">
+            <label class="field-label">是否通过 *</label>
+            <div class="choice-grid" style="grid-template-columns:1fr 1fr">
+              <label class="choice-card"><input type="radio" name="verdict-{{ ri.id }}" value="pass" {% if ri.opinion.verdict == 'pass' %}checked{% endif %}><span class="t" style="color:var(--success)">通过</span><span class="d">满足该具体化等级条件</span></label>
+              <label class="choice-card"><input type="radio" name="verdict-{{ ri.id }}" value="fail" {% if ri.opinion.verdict == 'fail' %}checked{% endif %}><span class="t" style="color:var(--warning)">不通过</span><span class="d">尚不满足，需整改</span></label>
+            </div>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label class="field-label" for="sg-{{ ri.id }}">满足建议</label>
+            <textarea class="input" id="sg-{{ ri.id }}" name="suggestion-{{ ri.id }}" rows="2" placeholder="还需要补充什么材料或开展什么工作">{{ ri.opinion.suggestion }}</textarea>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label class="field-label" for="cm-{{ ri.id }}">点评</label>
+            <textarea class="input" id="cm-{{ ri.id }}" name="comment-{{ ri.id }}" rows="2" placeholder="对企业自评与佐证材料的评价">{{ ri.opinion.comment }}</textarea>
+          </div>
+          {% else %}
+          <div class="field"><label class="field-label">我的结论</label>{% if ri.opinion.verdict %}<span class="tag {% if ri.opinion.verdict == 'pass' %}success{% else %}warning{% endif %}">{{ ri.opinion.get_verdict_display }}</span>{% else %}—{% endif %}</div>
+          {% if ri.opinion.suggestion %}<div class="field" style="margin-top:12px"><label class="field-label">满足建议</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.suggestion }}</p></div>{% endif %}
+          {% if ri.opinion.comment %}<div class="field" style="margin-top:12px"><label class="field-label">点评</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.comment }}</p></div>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+    {% endfor %}
+
+    {% if editable %}
+    <div class="flex" style="justify-content:flex-end;margin-top:var(--space-4)">
+      <button class="btn secondary" type="submit">保存第 {{ level }} 级</button>
+      {% if next_level %}<button class="btn primary" type="submit" name="next_level" value="{{ next_level }}">保存并进入第 {{ next_level }} 级</button>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block modals %}
+{% if editable %}
+<div class="modal-backdrop" id="submit-modal" role="dialog" aria-modal="true" aria-labelledby="submit-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="submit-title">提交评审意见</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:task_submit' assignment.id %}">
+      {% csrf_token %}
+      <div class="modal-body">
+        {% if missing or unexplained %}
+        <div class="alert warning">
+          <strong>还不能提交：</strong>
+          {% if missing %}<div style="margin-top:6px">未给出结论 {{ missing|length }} 条：{% for ri in missing|slice:":20" %}<a class="code-link" href="?level={{ ri.check_item.level }}#ri-{{ ri.id }}">{{ ri.check_item.code }}</a>{% endfor %}</div>{% endif %}
+          {% if unexplained %}<div style="margin-top:6px">判为不通过但未写建议或点评：{% for ri in unexplained %}<a class="code-link" href="?level={{ ri.check_item.level }}#ri-{{ ri.id }}">{{ ri.check_item.code }}</a>{% endfor %}</div>{% endif %}
+          <div class="small" style="margin-top:6px">请先保存当前页面的修改，再检查上面的条目。</div>
+        </div>
+        {% else %}
+        <p class="mt-0">共 {{ total }} 条已全部给出结论。提交后<strong>不能再修改</strong>，评价机构汇总三位专家的意见后终审。</p>
+        {% endif %}
+        <label class="check-line">
+          <input type="checkbox" name="confirm" value="1" required>
+          <span>我确认以上评审意见是本人独立、客观作出的。</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>返回</button>
+        <button class="btn primary" type="submit" {% if missing or unexplained %}disabled{% endif %}>确认提交</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

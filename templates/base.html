@@ -10,7 +10,7 @@
 </head>
 <body {% block body_attrs %}{% endblock %}>
   <header class="app-header" role="banner">
-    <a class="brand" href="{% url 'evaluations:trl_list' %}" style="text-decoration:none">
+    <a class="brand" href="{% url 'accounts:home' %}" style="text-decoration:none">
       <img src="{% static 'img/itei-logo.png' %}" alt="ITEI">
       <span>{{ system_name }}</span>
     </a>
@@ -18,15 +18,31 @@
     {% if request.user.is_authenticated %}
     <nav aria-label="主导航">
       <a href="{% url 'rules:process_overview' %}" {% if active_nav == 'process' %}aria-current="page"{% endif %}>{% if current_is_admin %}评价流程/细则{% else %}评价流程{% endif %}</a>
+      {% if current_is_expert %}
+      <a href="{% url 'reviews:task_list' %}" {% if active_nav == 'tasks' %}aria-current="page"{% endif %}>评审任务{% if expert_open_tasks %}<span class="nav-count" title="待处理的评审任务">{{ expert_open_tasks }}</span>{% endif %}</a>
+      <a href="{% url 'experts:expert_detail' request.user.expert_profile.pk %}" {% if active_nav == 'profile' %}aria-current="page"{% endif %}>我的档案</a>
+      {% else %}
       <a href="{% url 'evaluations:trl_list' %}" {% if active_nav == 'trl' %}aria-current="page"{% endif %}>TRL评价{% if pending_reviews.trl %}<span class="nav-count" title="待审核">{{ pending_reviews.trl }}</span>{% endif %}</a>
       {% if mrl_enabled %}<a href="{% url 'evaluations:mrl_list' %}" {% if active_nav == 'mrl' %}aria-current="page"{% endif %}>MRL评价{% if pending_reviews.mrl %}<span class="nav-count" title="待审核">{{ pending_reviews.mrl }}</span>{% endif %}</a>{% endif %}
+      {% if current_is_admin %}<a href="{% url 'reviews:board' %}" {% if active_nav == 'reviews' %}aria-current="page"{% endif %}>专家评审{% if review_todo %}<span class="nav-count" title="待分配专家、待终审或有专家逾期">{{ review_todo }}</span>{% endif %}</a>{% endif %}
       <a href="{% url 'reports:report_list' %}" {% if active_nav == 'reports' %}aria-current="page"{% endif %}>评价报告{% if pending_report_requests %}<span class="nav-count" title="待审核的导出申请">{{ pending_report_requests }}</span>{% endif %}</a>
+      {% endif %}
       {% if current_is_admin %}
       <a href="{% url 'accounts:user_list' %}" {% if active_nav == 'users' %}aria-current="page"{% endif %}>用户管理{% if pending_users %}<span class="nav-count" title="待审核注册">{{ pending_users }}</span>{% endif %}</a>
       <a href="{% url 'audit:audit_list' %}" {% if active_nav == 'audit' %}aria-current="page"{% endif %}>审计</a>
       {% endif %}
     </nav>
     <div class="user-zone">
+      {% if current_is_admin %}<a class="zone-tab" href="{% url 'experts:expert_list' %}" {% if active_nav == 'experts' %}aria-current="page"{% endif %}>专家库</a>{% endif %}
+      <a class="zone-icon" href="{% url 'notifications:inbox' %}" title="站内私信{% if unread_notifications %}（{{ unread_notifications }} 条未读）{% endif %}" aria-label="站内私信" {% if active_nav == 'inbox' %}aria-current="page"{% endif %}>
+        <svg class="icon" viewBox="0 0 24 24"><path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3H4a4 4 0 0 0 2-3v-3a7 7 0 0 1 4-6M9 17v1a3 3 0 0 0 6 0v-1"/></svg>
+        {% if unread_notifications %}<span class="nav-count">{{ unread_notifications }}</span>{% endif %}
+      </a>
+      {% if current_is_admin %}
+      <a class="zone-icon" href="{% url 'accounts:settings' %}" title="系统设置" aria-label="系统设置" {% if active_nav == 'settings' %}aria-current="page"{% endif %}>
+        <svg class="icon" viewBox="0 0 24 24"><path d="M10.3 4.3c.4-1.8 3-1.8 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 3 0 3.4a1.7 1.7 0 0 0-1 2.6c.9 1.5-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-3 1.8-3.4 0a1.7 1.7 0 0 0-2.5-1c-1.6.9-3.3-.9-2.4-2.4a1.7 1.7 0 0 0-1.1-2.6c-1.8-.4-1.8-3 0-3.4a1.7 1.7 0 0 0 1.1-2.5c-.9-1.6.8-3.3 2.4-2.4a1.7 1.7 0 0 0 2.5-1.1z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0-6 0"/></svg>
+      </a>
+      {% endif %}
       <a class="who" href="{% url 'accounts:account' %}" title="账号信息">{{ current_display_name }}{% if current_role_label %} · {{ current_role_label }}{% endif %}</a>
       <button class="btn sm secondary on-gradient" type="button" data-modal-open="logout-modal">退出</button>
     </div>

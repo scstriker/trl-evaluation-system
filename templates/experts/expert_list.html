@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}专家库{% endblock %}
+{% block header_title %}专家库{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>专家库</h1>
+      <div class="sub">评审专家的档案与账号。分配专家时按技术领域筛选；点击姓名查看专家主页。专家信息只对评价机构和专家本人可见。</div>
+    </div>
+    <div class="actions">
+      <a class="btn ghost" href="{% url 'experts:fee_list' %}">劳务记录</a>
+      <button class="btn secondary" type="button" data-modal-open="import-modal">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2zM12 11v6M9 14l3-3l3 3"/></svg>
+        Excel 导入
+      </button>
+      <a class="btn primary" href="{% url 'experts:expert_create' %}">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        新增专家
+      </a>
+    </div>
+  </div>
+
+  <div class="filter-tabs" aria-label="技术领域">
+    <a href="?{% if q %}q={{ q|urlencode }}{% endif %}" {% if not specialty_code %}aria-current="true"{% endif %}>全部领域 <span>{{ total }}</span></a>
+    {% for s in specialties %}
+    <a href="?specialty={{ s.code }}{% if q %}&q={{ q|urlencode }}{% endif %}" {% if specialty_code == s.code %}aria-current="true"{% endif %}>{{ s.name }} <span>{{ s.n }}</span></a>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>评审专家{% if sample_count %} <span class="small muted" style="font-weight:400">其中 {{ sample_count }} 位为样例数据（姓名、单位均为虚构），导入真实名单后可停用</span>{% endif %}</h2>
+      <form method="get" class="flex" style="gap:8px">
+        {% if specialty_code %}<input type="hidden" name="specialty" value="{{ specialty_code }}">{% endif %}
+        <input class="input" type="text" name="q" value="{{ q }}" placeholder="姓名、单位、职称或专家标识" style="width:260px;height:32px;padding:4px 10px;font-size:13px">
+        <button class="btn secondary sm" type="submit">搜索</button>
+      </form>
+    </div>
+    {% if experts %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>姓名</th><th>职称 / 职务</th><th>工作单位</th><th>专业领域</th><th>专家标识</th><th>联系方式</th><th>状态</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for e in experts %}
+          <tr>
+            <td class="nowrap"><a href="{% url 'experts:expert_detail' e.pk %}"><strong>{{ e.name }}</strong></a>{% if e.has_homepage %}<div class="small muted">有专家主页</div>{% endif %}</td>
+            <td class="small">{{ e.title|default:"—" }}{% if e.position %}<div class="muted">{{ e.position }}</div>{% endif %}</td>
+            <td>{{ e.organization }}</td>
+            <td class="small nowrap">{{ e.specialty.name }}</td>
+            <td>{% for tag in e.tags %}<span class="tag outline">{{ tag }}</span> {% empty %}<span class="muted">—</span>{% endfor %}</td>
+            <td class="small nowrap mono">{{ e.phone_masked|default:"—" }}{% if e.email %}<div class="muted">{{ e.email }}</div>{% endif %}</td>
+            <td class="nowrap">
+              {% if not e.user.is_active %}<span class="tag neutral">账号停用</span>
+              {% elif not e.in_service %}<span class="tag neutral">不在职</span>
+              {% else %}<span class="tag success">可分配</span>{% endif %}
+            </td>
+            <td class="nowrap"><a class="btn secondary sm" href="{% url 'experts:expert_edit' e.pk %}">编辑</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="big">{% if q or specialty_code %}没有符合条件的专家{% else %}专家库还是空的{% endif %}</div><p>点击“新增专家”逐个开通，或用“Excel 导入”批量导入专家名单。</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<div class="modal-backdrop" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="import-title">从 Excel 导入专家</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'experts:expert_import' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">第一行为表头。系统按“姓名 + 工作单位”判断是否已有该专家：已有的更新档案，没有的开通新账号（初始密码 Trl@2026）。</p>
+        <table class="data small">
+          <thead><tr><th>列名</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>姓名、工作单位</td><td>必填</td></tr>
+            <tr><td>专业领域</td><td>必填，须与技术领域名称一致：{% for s in specialties %}{{ s.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</td></tr>
+            <tr><td>职称、职务、是否在职、手机、邮箱</td><td>可选。“是否在职”填“否”表示不在职</td></tr>
+            <tr><td>专家标识（或专家标签1～3）</td><td>可选，最多 3 个</td></tr>
+            <tr><td>简介、研究方向、代表成果、教育与任职经历、个人网站</td><td>可选。代表成果和经历可在单元格内换行，每行一项</td></tr>
+            <tr><td>账号</td><td>可选，留空则按 expert01、expert02…顺延</td></tr>
+          </tbody>
+        </table>
+        <div class="field">
+          <label class="field-label" for="import-file">专家名单（.xlsx）</label>
+          <input class="input" type="file" id="import-file" name="file" accept=".xlsx" required>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn primary" type="submit">开始导入</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -6,13 +6,21 @@ requires-python = ">=3.11"
 dependencies = [
     "django>=5.0",
     "python-docx>=1.1",
+    "docxtpl>=0.20",
+    "openpyxl>=3.1",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-django>=4.8",
-    "openpyxl>=3.1",
+    "pillow>=10",
+]
+# 单机桌面窗口（打包 exe 时使用）
+desktop = [
+    "pywebview>=5.0",
+    "pyinstaller>=6.0",
 ]
 
 [tool.pytest.ini_options]

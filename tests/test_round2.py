@@ -138,9 +138,13 @@ def test_report_team_table_has_two_groups(enterprise, admin_user):
     record = report_services.generate_report(project, Report.TYPE_TRL, admin_user)
     document = Document(BytesIO(record.file.read()))
     team_table = next(t for t in document.tables if t.rows[0].cells[0].text == "自评估工作组")
-    assert team_table.rows[1].cells[2].text == "职务 / 职称"
-    group_rows = [row for row in team_table.rows if len({c.text for c in row.cells}) == 1]
-    assert [row.cells[0].text for row in group_rows] == ["自评估工作组", "第三方评价组"]
+    # 表头沿用评价机构提供的固定模板
+    assert team_table.rows[1].cells[2].text == "职称"
+    labels = [row.cells[0].text for row in team_table.rows if row.cells[0].text in ("自评估工作组", "第三方评价组")]
+    assert labels == ["自评估工作组", "第三方评价组"]
+    # 每组至少 5 行，保持原版式的行数
+    assert len(team_table.rows) == 2 + 5 + 2 + 5
+    assert any(row.cells[1].text == "张工" for row in team_table.rows)
 
 
 def test_blockers_split_by_team(enterprise, admin_user):

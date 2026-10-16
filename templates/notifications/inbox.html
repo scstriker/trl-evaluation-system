@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}站内私信{% endblock %}
+{% block header_title %}站内私信{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>站内私信</h1>
+      <div class="sub">系统在流程节点上发给你的消息。点击“查看”会标为已读并跳转到对应页面。</div>
+    </div>
+    <div class="actions">
+      {% if unread %}
+      <form method="post" action="{% url 'notifications:read_all' %}">{% csrf_token %}<button class="btn secondary sm" type="submit">全部标为已读</button></form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="filter-tabs" aria-label="消息筛选">
+    <a href="?" {% if show != 'unread' %}aria-current="true"{% endif %}>全部 <span>{{ total }}</span></a>
+    <a href="?show=unread" {% if show == 'unread' %}aria-current="true"{% endif %}>未读 <span>{{ unread }}</span></a>
+  </div>
+
+  <div class="card">
+    {% if page_obj.object_list %}
+    <div class="inbox-list">
+      {% for n in page_obj %}
+      <div class="inbox-row{% if not n.read_at %} unread{% endif %}">
+        <div class="inbox-main">
+          <div class="inbox-title">
+            <span class="tag {{ n.category_tone }}">{{ n.category_label }}</span>
+            {% if not n.read_at %}<span class="tag outline">未读</span>{% endif %}
+            <strong>{{ n.title }}</strong>
+          </div>
+          {% if n.body %}<div class="inbox-body prewrap">{{ n.body }}</div>{% endif %}
+          <div class="inbox-meta">{{ n.created_at|date:"Y-m-d H:i" }}</div>
+        </div>
+        <div class="inbox-act">
+          <form method="post" action="{% url 'notifications:open' n.pk %}">{% csrf_token %}
+            <button class="btn {% if n.read_at %}ghost{% else %}secondary{% endif %} sm" type="submit">{% if n.link %}查看{% else %}标为已读{% endif %}</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if page_obj.has_other_pages %}
+    <div class="card-body flex-between">
+      <span class="small muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+      <span class="flex">
+        {% if page_obj.has_previous %}<a class="btn secondary sm" href="?show={{ show }}&page={{ page_obj.previous_page_number }}">上一页</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn secondary sm" href="?show={{ show }}&page={{ page_obj.next_page_number }}">下一页</a>{% endif %}
+      </span>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state"><div class="big">{% if show == 'unread' %}没有未读消息{% else %}暂无消息{% endif %}</div><p>提交、审核、评审、报告等流程节点有进展时，系统会在这里通知你。</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

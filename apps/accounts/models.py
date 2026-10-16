@@ -39,3 +39,29 @@ class EnterpriseProfile(models.Model):
 
     def __str__(self):
         return self.company_name
+
+
+def seal_upload_path(instance, filename):
+    return f"config/{filename}"
+
+
+class SystemConfig(models.Model):
+    """系统设置（单行）：报告印章图片、专家评审与整改期限、默认劳务费。"""
+
+    seal_image = models.FileField("印章图片", upload_to=seal_upload_path, blank=True)
+    expert_review_days = models.PositiveSmallIntegerField("专家评审期限（天）", default=7)
+    rectify_days = models.PositiveSmallIntegerField("整改期限（天）", default=14)
+    expert_fee_default = models.DecimalField("单次评审默认劳务费（元）", max_digits=10, decimal_places=2, default=0)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "系统设置"
+
+    def __str__(self):
+        return "系统设置"
+
+    @classmethod
+    def get(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config

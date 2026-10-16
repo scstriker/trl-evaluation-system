@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}评审管理 · {{ project.name }}{% endblock %}
+{% block header_title %}专家评审{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <div class="sub">{{ project.applicant }}{% if project.specialty %} · {{ project.specialty.name }}{% endif %} · {{ sys.name }}评价第 {{ round.number }} 轮 · {{ stats.total }} 条 · 提交于 {{ round.submitted_at|date:"Y-m-d H:i" }}</div>
+    </div>
+    <div class="actions">
+      <a class="btn ghost sm" href="{% url 'evaluations:assessment_detail' project.id sys.code %}">查看评价页</a>
+      <a class="btn ghost sm" href="{% url 'reviews:board' %}">← 返回专家评审</a>
+    </div>
+  </div>
+
+  {% if rounds|length > 1 %}
+  <div class="filter-tabs" aria-label="评审轮次">
+    {% for r in rounds %}<a href="{% url 'reviews:round_detail' r.id %}" {% if r.id == round.id %}aria-current="true"{% endif %}>第 {{ r.number }} 轮 <span>{{ r.get_status_display }}</span></a>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if round.status == 'assigning' %}
+  <div class="alert warning"><strong>还有 {{ free_count }} 个席位待分配专家。</strong> <a href="{% url 'reviews:assign' round.id %}">去分配专家 →</a></div>
+  {% elif round.status == 'reviewing' %}
+  <div class="alert info">专家评审中：三位专家都提交意见后进入终审。逾期未提交的，可以催办、延期或更换专家。</div>
+  {% elif round.status == 'ruling' %}
+  <div class="alert warning"><strong>三位专家意见已齐，请逐条终审。</strong>专家意见一致的可以批量确认；意见不一致或要推翻一致意见的，须填写裁定理由；判不通过的须填写整改要求（企业可见）。</div>
+  {% elif round.status == 'rectifying' %}
+  <div class="alert warning">
+    <strong>已终审，等待企业整改：{{ stats.fail }} 条需整改，截止 {{ round.rectify_due_at|date:"Y-m-d H:i" }}{% if round.rectify_overdue %}（已逾期）{% endif %}。</strong>
+    <button class="btn ghost sm" type="button" data-modal-open="rectify-extend-modal">延长整改期限…</button>
+  </div>
+  {% else %}
+  <div class="alert success"><strong>第 {{ round.number }} 轮已结束：{{ round.get_outcome_display }}。</strong>{% if round.finalized_at %}终审 {{ round.finalized_by|who }} · {{ round.finalized_at|date:"Y-m-d H:i" }}。{% endif %}{% if round.feedback_summary %}终审意见：{{ round.feedback_summary }}{% endif %}</div>
+  {% endif %}
+
+  {# ---------- 专家组 ---------- #}
+  <div class="section-title">专家组（第 {{ round.number }} 轮）</div>
+  <div class="slot-grid">
+    {% for slot, a in slots %}
+    <div class="slot-card{% if a and a.is_overdue %} overdue{% endif %}">
+      <div class="slot-no">席位 {{ slot }}{% if slot == 1 %} · 组长{% endif %}</div>
+      {% if a %}
+      <div class="slot-name"><a href="{% url 'experts:expert_detail' a.expert.expert_profile.pk %}">{{ a.expert.expert_profile.name }}</a></div>
+      <div class="small muted">{{ a.expert.expert_profile.organization }}{% if a.expert.expert_profile.title %} · {{ a.expert.expert_profile.title }}{% endif %}</div>
+      <div class="slot-status">
+        {% if a.status == 'submitted' %}<span class="tag success">已提交</span>
+        {% elif a.is_overdue %}<span class="tag warning">逾期 {{ a.overdue_days }} 天</span>
+        {% elif a.status == 'invited' %}<span class="tag neutral">待接受</span>
+        {% else %}<span class="tag info">评审中</span>{% endif %}
+      </div>
+      <table class="slot-meta">
+        <tr><th>分配</th><td>{{ a.assigned_at|date:"m-d H:i" }}</td></tr>
+        <tr><th>截止</th><td>{{ a.due_at|date:"m-d H:i" }}</td></tr>
+        {% if a.pledged_at %}<tr><th>承诺</th><td>{{ a.pledged_at|date:"m-d H:i" }}（{{ a.pledge_version }}）</td></tr>{% endif %}
+        {% if a.submitted_at %}<tr><th>提交</th><td>{{ a.submitted_at|date:"m-d H:i" }}</td></tr>{% endif %}
+        {% if a.remind_count %}<tr><th>催办</th><td>{{ a.remind_count }} 次</td></tr>{% endif %}
+      </table>
+      {% if a.status == 'invited' or a.status == 'accepted' %}
+      <div class="flex" style="gap:6px;margin-top:10px">
+        <form method="post" action="{% url 'reviews:remind' a.id %}">{% csrf_token %}<button class="btn secondary sm" type="submit">催办</button></form>
+        <button class="btn ghost sm" type="button" data-modal-open="extend-{{ a.id }}">延期…</button>
+        <a class="btn ghost sm" href="{% url 'reviews:reassign' a.id %}">更换…</a>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="slot-empty">待分配</div>
+      {% if round.status == 'assigning' %}<a class="btn primary sm" href="{% url 'reviews:assign' round.id %}">分配专家</a>{% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if history %}
+  <div class="small muted" style="margin-top:8px">
+    {% for h in history %}<div>席位 {{ h.slot }} · {{ h.expert.expert_profile.name }} · {{ h.get_status_display }}{% if h.decline_reason %}：{{ h.decline_reason }}{% endif %}{% if h.cancel_reason %}：{{ h.cancel_reason }}{% endif %}{% if h.status == 'declined' and not h.replaced_by.exists %} · <a href="{% url 'reviews:reassign' h.id %}">改派</a>{% endif %}</div>{% endfor %}
+  </div>
+  {% endif %}
+
+  {# ---------- 意见对照与终审 ---------- #}
+  <div class="section-title">意见对照与终审</div>
+  {% if not submitted %}
+  <div class="card"><div class="empty-state"><div class="big">还没有专家提交意见</div><p>专家提交后，这里按条目并排显示三位专家的结论、满足建议和点评。专家未提交的草稿不显示。</p></div></div>
+  {% else %}
+  <div class="kpi-row">
+    <div class="kpi"><span class="l">评审条目</span><span class="v">{{ stats.total }}<small>条</small></span><span class="d">已提交意见 {{ submitted|length }}/3 位</span></div>
+    <div class="kpi"><span class="l">意见不一致</span><span class="v">{{ stats.split }}<small>条</small></span><span class="d">须由评价机构裁定并写理由</span></div>
+    <div class="kpi {% if ruling and stats.unruled %}hi{% endif %}"><span class="l">未终审</span><span class="v">{{ stats.unruled }}<small>条</small></span><span class="d">其中专家一致的 {{ stats.unanimous_pending }} 条可批量确认</span></div>
+    <div class="kpi"><span class="l">不通过</span><span class="v">{{ stats.fail }}<small>条</small></span><span class="d">{% if stats.missing_feedback %}{{ stats.missing_feedback }} 条缺整改要求{% else %}整改要求企业可见{% endif %}</span></div>
+  </div>
+
+  <div class="flex-between" style="margin-bottom:12px">
+    <div class="filter-tabs" style="margin:0" aria-label="条目筛选">
+      <a href="?" {% if not show %}aria-current="true"{% endif %}>全部 <span>{{ stats.total }}</span></a>
+      <a href="?show=split" {% if show == 'split' %}aria-current="true"{% endif %}>意见不一致 <span>{{ stats.split }}</span></a>
+      <a href="?show=unruled" {% if show == 'unruled' %}aria-current="true"{% endif %}>未终审 <span>{{ stats.unruled }}</span></a>
+      <a href="?show=fail" {% if show == 'fail' %}aria-current="true"{% endif %}>不通过 <span>{{ stats.fail }}</span></a>
+    </div>
+    {% if ruling and stats.unanimous_pending %}
+    <form method="post" action="{% url 'reviews:confirm_unanimous' round.id %}">{% csrf_token %}<button class="btn secondary sm" type="submit">按专家一致意见批量确认（{{ stats.unanimous_pending }} 条）</button></form>
+    {% endif %}
+  </div>
+
+  {% for lv in levels %}
+  <div class="item-group-title">第 {{ lv.level }} 级</div>
+  <div class="table-wrap">
+    <table class="data matrix">
+      <thead>
+        <tr>
+          <th style="width:26%">条目与企业自评</th>
+          {% for a in submitted %}<th>席位 {{ a.slot }} · {{ a.expert.expert_profile.name }}</th>{% endfor %}
+          <th style="width:18%">终审</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in lv.rows %}
+        {% with ri=row.item %}
+        <tr id="ri-{{ ri.id }}"{% if row.split %} class="split-row"{% endif %}>
+          <td>
+            <div class="mono small"><strong>{{ ri.check_item.code }}</strong>
+              {% if row.split %}<span class="tag warning">意见不一致</span>{% elif row.consensus %}<span class="tag neutral">专家一致</span>{% endif %}</div>
+            <div class="small" style="margin-top:4px">{{ ri.check_item.name|truncatechars:90 }}</div>
+            <div class="small muted" style="margin-top:4px">自评：{% if ri.snap_result == 'satisfied' %}满足{% elif ri.snap_result == 'not_satisfied' %}不满足{% elif ri.snap_result == 'not_applicable' %}不适用{% else %}未填写{% endif %} · 佐证 {{ ri.snap_evidence|length }} 份</div>
+          </td>
+          {% for cell in row.cells %}
+          <td class="small">
+            {% if cell and cell.verdict %}<span class="tag {% if cell.verdict == 'pass' %}success{% else %}warning{% endif %}">{{ cell.get_verdict_display }}</span>{% else %}<span class="muted">—</span>{% endif %}
+            {% if cell.suggestion %}<div style="margin-top:4px"><span class="muted">建议：</span>{{ cell.suggestion }}</div>{% endif %}
+            {% if cell.comment %}<div style="margin-top:4px"><span class="muted">点评：</span>{{ cell.comment }}</div>{% endif %}
+          </td>
+          {% endfor %}
+          <td class="small">
+            {% if ri.final_result %}
+              <span class="tag {% if ri.final_result == 'pass' %}success{% else %}warning{% endif %}">{{ ri.get_final_result_display }}</span>
+              <span class="muted">{{ ri.get_final_basis_display }}</span>
+              {% if ri.ruling_reason %}<div style="margin-top:4px"><span class="muted">理由：</span>{{ ri.ruling_reason }}</div>{% endif %}
+              {% if ri.feedback %}<div style="margin-top:4px"><span class="muted">整改要求：</span>{{ ri.feedback }}</div>{% elif ri.final_result == 'fail' %}<div style="margin-top:4px"><span class="tag warning">缺整改要求</span></div>{% endif %}
+            {% else %}<span class="muted">未终审</span>{% endif %}
+            {% if ruling %}<div style="margin-top:6px"><button class="btn {% if ri.final_result %}ghost{% else %}secondary{% endif %} sm" type="button" data-modal-open="rule-{{ ri.id }}">{% if ri.final_result %}修改{% else %}终审…{% endif %}</button></div>{% endif %}
+          </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% empty %}
+  <div class="card"><div class="empty-state"><div class="big">没有符合筛选条件的条目</div></div></div>
+  {% endfor %}
+  {% endif %}
+
+  {# ---------- 提交终审结果 ---------- #}
+  {% if ruling %}
+  <div class="card finalize-card" id="finalize">
+    <div class="card-head"><h2>提交终审结果</h2>{% if stats.unruled %}<span class="tag warning">还有 {{ stats.unruled }} 条未终审</span>{% elif stats.missing_feedback %}<span class="tag warning">{{ stats.missing_feedback }} 条缺整改要求</span>{% else %}<span class="tag success">可以提交</span>{% endif %}</div>
+    <form method="post" action="{% url 'reviews:finalize' round.id %}" class="card-body form-grid">
+      {% csrf_token %}
+      {% if stats.fail %}
+      <div class="option-list">
+        <label class="option"><input type="radio" name="decision" value="rectify" checked><span class="t">要求整改</span><span class="d">{{ stats.fail }} 条不通过的条目发给企业整改，企业提交后进入第 {{ round.number|add:1 }} 轮复评</span></label>
+        <label class="option"><input type="radio" name="decision" value="close"><span class="t">结束评审</span><span class="d">不再整改，按“自第 1 级起全部通过的连续级别”确定达成等级</span></label>
+      </div>
+      <div class="field" style="max-width:280px">
+        <label class="field-label" for="rectify_days">整改期限（天）</label>
+        <input class="input" type="number" id="rectify_days" name="rectify_days" min="1" max="90" value="{{ config.rectify_days }}">
+      </div>
+      {% else %}
+      <input type="hidden" name="decision" value="close">
+      <p class="mt-0 mb-0">全部 {{ stats.total }} 条终审通过，提交后专家评审结束，可以生成评价报告；第三方评价组为空时自动填入本轮专家组。</p>
+      {% endif %}
+      <div class="field">
+        <label class="field-label" for="summary">终审意见总述（企业可见，可选）</label>
+        <textarea class="input" id="summary" name="summary" rows="3" placeholder="对本轮评审的总体意见。不要写专家姓名。"></textarea>
+      </div>
+      <label class="check-line"><input type="checkbox" name="confirm" value="1" required><span>我已逐条核对三位专家的意见，确认以上终审结果。</span></label>
+      <div class="flex" style="justify-content:flex-end"><button class="btn primary" type="submit" {% if stats.unruled or stats.missing_feedback %}disabled{% endif %}>提交终审结果</button></div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for slot, a in slots %}{% if a and a.status in 'invited accepted' %}
+<div class="modal-backdrop" id="extend-{{ a.id }}" role="dialog" aria-modal="true">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>延长评审期限 · 席位 {{ a.slot }}</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:extend' a.id %}">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">{{ a.expert.expert_profile.name }}当前截止 {{ a.due_at|date:"Y-m-d H:i" }}{% if a.is_overdue %}（已逾期 {{ a.overdue_days }} 天，从今天起算）{% endif %}。</p>
+        <div class="field"><label class="field-label" for="days-{{ a.id }}">延长天数</label><input class="input" type="number" id="days-{{ a.id }}" name="days" min="1" max="30" value="7"></div>
+      </div>
+      <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>取消</button><button class="btn primary" type="submit">确认延期</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}{% endfor %}
+
+{% if round.status == 'rectifying' %}
+<div class="modal-backdrop" id="rectify-extend-modal" role="dialog" aria-modal="true">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>延长整改期限</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:extend_rectify' round.id %}">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">当前截止 {{ round.rectify_due_at|date:"Y-m-d H:i" }}。延长后企业会收到通知。</p>
+        <div class="field"><label class="field-label" for="rectify-days">延长天数</label><input class="input" type="number" id="rectify-days" name="days" min="1" max="60" value="7"></div>
+      </div>
+      <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>取消</button><button class="btn primary" type="submit">确认延长</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if ruling %}
+{% for lv in levels %}{% for row in lv.rows %}{% with ri=row.item %}
+<div class="modal-backdrop" id="rule-{{ ri.id }}" role="dialog" aria-modal="true" aria-labelledby="rule-title-{{ ri.id }}">
+  <div class="modal wide">
+    <div class="modal-head"><h3 id="rule-title-{{ ri.id }}">终审 · {{ ri.check_item.code }}</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:rule' ri.id %}">
+      {% csrf_token %}<input type="hidden" name="show" value="{{ show }}">
+      <div class="modal-body form-grid">
+        <div class="level-banner"><div><div class="def" style="font-size:14px">{{ ri.check_item.name }}</div><div class="meta">评价支撑信息要求：{{ ri.check_item.evidence }}</div></div></div>
+        <div class="small">
+          {% for cell in row.cells %}<div style="margin-bottom:4px">席位 {{ forloop.counter }}：{% if cell.verdict %}<strong>{{ cell.get_verdict_display }}</strong>{% else %}—{% endif %}{% if cell.suggestion %}；建议：{{ cell.suggestion }}{% endif %}{% if cell.comment %}；点评：{{ cell.comment }}{% endif %}</div>{% endfor %}
+          {% if row.consensus %}<span class="tag neutral">专家一致：{% if row.consensus == 'pass' %}通过{% else %}不通过{% endif %}</span>{% else %}<span class="tag warning">意见不一致，须写裁定理由</span>{% endif %}
+        </div>
+        <div class="field">
+          <label class="field-label">终审结论 *</label>
+          <div class="choice-grid" style="grid-template-columns:1fr 1fr">
+            <label class="choice-card"><input type="radio" name="result" value="pass" required {% if ri.final_result == 'pass' or not ri.final_result and row.consensus == 'pass' %}checked{% endif %}><span class="t" style="color:var(--success)">通过</span></label>
+            <label class="choice-card"><input type="radio" name="result" value="fail" {% if ri.final_result == 'fail' or not ri.final_result and row.consensus == 'fail' %}checked{% endif %}><span class="t" style="color:var(--warning)">不通过</span></label>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="reason-{{ ri.id }}">裁定理由{% if not row.consensus %} *{% endif %}（仅评价机构可见）</label>
+          <textarea class="input" id="reason-{{ ri.id }}" name="reason" rows="2" {% if not row.consensus %}required{% endif %} placeholder="意见不一致或推翻专家一致意见时必填">{{ ri.ruling_reason }}</textarea>
+        </div>
+        <div class="field">
+          <label class="field-label" for="feedback-{{ ri.id }}">整改要求（判不通过时必填，企业可见）</label>
+          <textarea class="input" id="feedback-{{ ri.id }}" name="feedback" rows="3" placeholder="写明企业需要补充或修改的内容">{{ row.draft }}</textarea>
+          <div class="hint">已预填判“不通过”的专家给出的建议和点评，请整理成整改要求，不要写专家姓名。</div>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>取消</button><button class="btn primary" type="submit">保存终审</button></div>
+    </form>
+  </div>
+</div>
+{% endwith %}{% endfor %}{% endfor %}
+{% endif %}
+{% endblock %}

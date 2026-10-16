@@ -16,7 +16,7 @@
   </div>
   {% elif ready_for_report %}
   <div class="alert success">
-    <strong>已全部审核通过至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。</strong>
+    <strong>{% if assessment.is_expert_mode %}专家评审已结束，达成 {{ sys.abbr }} {{ achieved }}。{% else %}已全部审核通过至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。{% endif %}</strong>
     {% if is_admin %}<a href="{% url 'reports:report_preview' project.id %}?type={{ sys.code }}">前往生成报告 →</a>{% else %}等待评价机构出具评价报告。{% endif %}
   </div>
   {% endif %}
@@ -47,6 +47,8 @@
   {% if is_owner and submitted_levels and assessment.status == 'in_progress' %}
   <div class="alert info">第 {{ submitted_text }} 级已提交，等待评价机构审核；审核期间这些级别不能修改。</div>
   {% endif %}
+
+  {% if assessment.status == 'in_progress' or assessment.is_expert_mode %}{% include "reviews/_expert_panel.html" %}{% endif %}
 
   {% if is_admin and pending_target %}
   <div class="card review-panel">
@@ -112,7 +114,7 @@
         {% elif is_owner %}<button class="btn ghost sm kpi-action" type="button" data-modal-open="target-modal">申请调整目标等级…</button>
         {% else %}{{ sys.standard }}{% endif %}</span></div>
     <div class="kpi"><span class="l">已审核通过</span><span class="v">{% if achieved %}{{ sys.abbr }} {{ achieved }}{% else %}—{% endif %}</span><span class="d">自第 1 级起连续通过的最高级别</span></div>
-    <div class="kpi"><span class="l">自评进度（目标级内）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
+    <div class="kpi"><span class="l">自评进度（{% if assessment.is_expert_mode %}全部等级{% else %}目标级内{% endif %}）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
     <div class="kpi"><span class="l">满足 / 不满足 / 不适用</span><span class="v">{{ scope.satisfied }} / {{ scope.not_satisfied }} / {{ scope.not_applicable }}</span><span class="d">不满足、不适用需说明理由</span></div>
   </div>
 
@@ -135,7 +137,7 @@
       <div class="level-ladder" style="--levels:{{ sys.max_level }}" role="tablist" aria-label="{{ sys.abbr }} 等级">
         {% for s in states %}
         {% if s.state == 'out_of_scope' %}
-        <span class="lv-step out h{{ s.level }}" title="第 {{ s.level }} 级超出目标等级，无需填写">
+        <span class="lv-step out h{{ s.level }}" title="第 {{ s.level }} 级超出目标等级，无需填写{% if is_owner %}（改为专家评审后需填写全部等级）{% endif %}">
           <span class="lvl">{{ s.level }}</span><span class="st">超出目标</span>
         </span>
         {% else %}
@@ -149,7 +151,11 @@
         {% endfor %}
       </div>
       <div class="ladder-legend small muted">
+        {% if assessment.is_expert_mode %}
+        <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>专家评审中</span><span><i class="sw returned"></i>需整改</span><span><i class="sw ready"></i>填写中</span><span><i class="sw out"></i>未通过</span>
+        {% else %}
         <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>已提交待审核</span><span><i class="sw returned"></i>已退回</span><span><i class="sw ready"></i>填写中 / 待提交</span><span><i class="sw out"></i>超出目标等级</span>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -168,7 +174,10 @@
       {% if current_state.state == 'passed' %}<span class="tag success">已审核通过 · 内容冻结</span>
       {% elif current_state.state == 'submitted' %}<span class="tag info">已提交 · 等待审核</span>
       {% elif current_state.state == 'returned' %}<span class="tag warning">已退回 · 请修改</span>
-      {% elif current_state.state == 'ready' %}<span class="tag info">已填写完整 · 待提交</span>
+      {% elif current_state.state == 'expert_review' %}<span class="tag info">专家评审中 · 内容冻结</span>
+      {% elif current_state.state == 'rectify' %}<span class="tag warning">需整改 · 只改未通过的条目</span>
+      {% elif current_state.state == 'not_passed' %}<span class="tag neutral">专家评审未通过</span>
+      {% elif current_state.state == 'ready' %}<span class="tag info">{% if assessment.is_expert_mode %}已填写完整{% else %}已填写完整 · 待提交{% endif %}</span>
       {% else %}<span class="tag neutral">填写中</span>{% endif %}
     </div>
   </div>
@@ -178,7 +187,7 @@
 
   {% for group in groups %}
   <div class="item-group-title">{{ group.title }}</div>
-  {% for item in group.items %}{% include "evaluations/_item_row.html" %}{% endfor %}
+  {% for item in group.items %}{% include "evaluations/_item_row.html" with item_editable=item.can_edit %}{% endfor %}
   {% empty %}
   <div class="empty-state"><div class="big">本级没有适用的细则条目</div></div>
   {% endfor %}
@@ -186,7 +195,7 @@
 {% endblock %}
 
 {% block modals %}
-  {% for group in groups %}{% for item in group.items %}{% include "evaluations/_item_modal.html" %}{% endfor %}{% endfor %}
+  {% for group in groups %}{% for item in group.items %}{% include "evaluations/_item_modal.html" with item_editable=item.can_edit %}{% endfor %}{% endfor %}
 
   {# ---- 企业：提交审核 ---- #}
   {% if is_owner and submit_plan %}

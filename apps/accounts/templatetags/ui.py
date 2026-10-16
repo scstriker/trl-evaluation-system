@@ -14,3 +14,20 @@ def who(user):
 @register.filter
 def get_item(mapping, key):
     return mapping.get(key) if mapping else None
+
+
+@register.filter
+def can_delete_project(user, project):
+    from apps.evaluations.services import can_delete_project as allowed
+
+    return allowed(user, project)
+
+
+@register.filter
+def split_words(text):
+    return text.split()
+
+
+@register.filter
+def get_field(form, name):
+    return form[name]

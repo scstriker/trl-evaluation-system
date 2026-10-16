@@ -19,9 +19,10 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = EvaluationProject
-        fields = ["name", "domain", "tech_type", "remark"]
+        fields = ["name", "specialty", "domain", "tech_type", "remark"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "input", "placeholder": "例如：稀土萃取分离过程元素成分在线检测仪表"}),
+            "specialty": forms.Select(attrs={"class": "input"}),
             "domain": forms.TextInput(attrs={"class": "input", "placeholder": "例如：智能制造 / 仪器仪表 / 工业软件"}),
             "tech_type": forms.RadioSelect(),
             "remark": forms.Textarea(attrs={"class": "input", "rows": 3, "placeholder": "可选"}),
@@ -30,6 +31,7 @@ class ProjectForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["tech_type"].choices = EvaluationProject.TECH_TYPE_CHOICES
+        self.fields["specialty"].empty_label = "请选择技术领域"
         self.mrl_available = rules_available(MRL)
         if not self.mrl_available:
             # 制造成熟度细则导入前不开放，申报页只保留技术就绪度

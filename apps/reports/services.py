@@ -1,30 +1,36 @@
 """评价报告：技术就绪度 / 制造成熟度 / 两者综合三种类型。
 
-报告正文先装配为统一的“块”结构（标题、段落、表题、表格），在线预览与 Word 导出共用同一份数据，
-保证两者内容一致。单体系报告沿用《4400 技术就绪度评价报告》的章节结构。
+报告分两部分：
+- 前置信息（1 概况、2 评价实施情况、3 评价对象研发信息）按评价机构提供的固定模板填写，
+  由 docx_render 填入原版式 Word 模板；
+- 第 4 章起的评价准则、等级评价、总结和附录由系统按审核 / 终审结果自动拼接。
+两部分都装配为统一的“块”结构，在线预览与 Word 导出共用同一份数据，保证内容一致。
 """
 
 import hashlib
-from io import BytesIO
+import logging
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.db.models import Max
+from django.urls import reverse
 from django.utils import timezone
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
 
-from apps.accounts.permissions import can_generate_report, display_name, is_project_owner
+from apps.accounts.permissions import can_generate_report, is_project_owner
 from apps.audit.models import AuditLog
-from apps.evaluations.models import Assessment, CheckItem, EvaluationTeamMember
+from apps.evaluations.models import Assessment, CheckItem, EvaluationTeamMember, LevelReview
 from apps.evaluations.services import get_achieved_level, get_reviews, mrl_enabled
 from apps.evidence.models import EvidenceFile
-from apps.reports.models import Report, ReportRequest
+from apps.notifications.models import CATEGORY_TODO
+from apps.notifications.services import notify, notify_admins
+from apps.reports import docx_render
+from apps.reports import pdf as pdf_service
+from apps.reports.models import Report, ReportFrontMatter, ReportRequest
 from apps.rules.models import LevelDefinition
 from apps.rules.systems import MRL, TRL, get_system
+
+logger = logging.getLogger(__name__)
 
 RESULT_LABELS = {
     CheckItem.RESULT_SATISFIED: "是",
@@ -42,6 +48,27 @@ TYPE_SYSTEMS = {
 TYPE_SUFFIX = {Report.TYPE_TRL: "TRL", Report.TYPE_MRL: "MRL", Report.TYPE_COMBINED: "ZH"}
 
 TYPE_TITLES = dict(Report.TYPE_CHOICES)
+
+HEADER_SUFFIX = {
+    Report.TYPE_TRL: "技术就绪度评价",
+    Report.TYPE_MRL: "制造成熟度评价",
+    Report.TYPE_COMBINED: "技术就绪度与制造成熟度评价",
+}
+
+# 第 1 章“概况”的小节标题与对应字段（与报告模板一致）
+CHAPTER_ONE = [
+    ("1.1 装备研制目标", None),
+    ("1.1.1 任务来源", "s1_1_1"),
+    ("1.1.2 研究目标", "s1_1_2"),
+    ("1.1.3 主要技术指标", "s1_1_3"),
+    ("1.1.4 成果形式", "s1_1_4"),
+    ("1.1.5 产品介绍及主要功能", "s1_1_5"),
+    ("1.2 总体进展情况", None),
+    ("1.2.1 项目总体进展概述", "s1_2_1"),
+    ("1.2.2 技术指标完成情况", "s1_2_2"),
+    ("1.2.3 关键部件研制", "s1_2_3"),
+    ("1.2.4 软件开发", "s1_2_4"),
+]
 
 TEAM_HEADERS = ["角色", "姓名", "职务 / 职称", "专业及特长", "工作单位"]
 TEAM_WIDTHS = [1.6, 2.0, 2.6, 4.4, 5.4]
@@ -115,6 +142,13 @@ def report_availability(project):
                 missing = True
                 reasons.append(f"该项目未开展{get_system(system).name}评价")
                 continue
+            if assessment.is_expert_mode:
+                from apps.reviews.services import report_block_reason
+
+                reason = report_block_reason(assessment)
+                if reason:
+                    reasons.append(reason)
+                continue
             achieved = get_achieved_level(assessment)
             if achieved < assessment.target_level:
                 sys = assessment.sys
@@ -138,7 +172,9 @@ def build_report(project, report_type):
         .order_by("check_item__assessment__system", "check_item__order_index", "uploaded_at")
     )
     title = TYPE_TITLES[report_type]
-    blocks = _body_blocks(project, report_type, parts, team, evidence_files)
+    front = front_context(project, report_type, parts, team)
+    head = front_blocks(front)
+    tail = _tail_blocks(project, report_type, parts, evidence_files, start=4)
     return {
         "project": project,
         "report_type": report_type,
@@ -146,7 +182,10 @@ def build_report(project, report_type):
         "parts": parts,
         "team": team,
         "evidence_files": evidence_files,
-        "blocks": blocks,
+        "front": front,
+        "front_blocks": head,
+        "tail_blocks": tail,
+        "blocks": head + tail,
     }
 
 
@@ -220,7 +259,7 @@ def _analysis_blocks(project, part, chapter):
     blocks.append({"kind": "p", "text": f"{sys.name}等级分析及确定见表 {chapter}-1 至表 {chapter}-{achieved}。"})
     for section in part["sections"]:
         review = section["review"]
-        passed = f" · {timezone.localtime(review.reviewed_at):%Y-%m-%d} 审核通过" if review and review.reviewed_at else ""
+        passed = f" · {timezone.localtime(review.reviewed_at):%Y-%m-%d} {_pass_word(review)}" if review and review.reviewed_at else ""
         blocks.append(
             {"kind": "caption", "text": f"表 {chapter}-{section['level']} {sys.name}等级结论的分析说明（{section['level']} 级）{passed}"}
         )
@@ -242,81 +281,155 @@ def _analysis_blocks(project, part, chapter):
     return blocks
 
 
-def _body_blocks(project, report_type, parts, team, evidence_files):
-    combined = report_type == Report.TYPE_COMBINED
+def _paras(text):
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+def get_front_matter(project):
+    """前置信息记录；首次使用时以项目概况预填 1.2.1。"""
+    front_matter, created = ReportFrontMatter.objects.get_or_create(project=project)
+    if created and project.overview_text:
+        front_matter.s1_2_1 = project.overview_text
+        front_matter.save(update_fields=["s1_2_1"])
+    return front_matter
+
+
+def _default_sections(project, report_type, parts):
     names = "和".join(part["sys"].name for part in parts)
-    blocks = []
-
-    # 1 概况
-    info_rows = [
-        ["技术项目名称", project.name],
-        ["委托（受评）单位", project.applicant],
-        ["评价报告出具单位", project.issuer],
-        ["应用领域", project.domain or "—"],
-        ["技术类型", project.get_tech_type_display()],
-    ]
-    for part in parts:
-        sys = part["sys"]
-        info_rows.append([f"目标{sys.name}等级", f"{sys.abbr} {part['target']}"])
-        info_rows.append([f"评价达成{sys.name}等级", f"{sys.abbr} {part['achieved']}"])
-    blocks += [
-        {"kind": "h1", "text": "1 概况"},
-        {"kind": "h2", "text": "1.1 项目基本信息"},
-        {"kind": "table", "headers": ["项目", "内容"], "rows": info_rows, "widths": [4.5, 11.5], "info": True},
-        {"kind": "h2", "text": "1.2 项目概况"},
-        {"kind": "p", "text": project.overview_text or "（项目概况由委托单位提供，参见项目任务书及研制总结材料。）"},
-    ]
-
-    # 2 评价实施情况
     targets = "；".join(f"{p['sys'].name} {p['target']} 级（{p['sys'].abbr} {p['target']}）" for p in parts)
-    scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['achieved']} 级" for p in parts)
     standards = "、".join(p["sys"].standard for p in parts)
-    blocks += [
-        {"kind": "h1", "text": "2 评价实施情况"},
-        {"kind": "h2", "text": "2.1 评价目的和范围"},
-        {
-            "kind": "p",
-            "text": f"对{project.applicant}研制的“{project.name}”开展{names}评价，验证其是否满足任务书中规定的{targets}的要求。"
-            f"评价范围覆盖{scope}的全部评价细则条目。",
-        },
-        {"kind": "h2", "text": "2.2 评价依据"},
-        {"kind": "table", "headers": ["标准编号", "标准名称"], "rows": _basis(parts), "widths": [4.0, 12.0]},
-        {"kind": "h2", "text": "2.3 评价人员"},
-        {
-            "kind": "p",
-            "text": f"{project.applicant}委托{project.issuer}开展{names}评价，成立了自评估工作组和第三方评价组，"
-            "各组成员信息见下表。",
-        },
-        {"kind": "caption", "text": "评价组成员组成"},
+    expert = any(p["assessment"].is_expert_mode for p in parts)
+    if expert:
+        scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['sys'].max_level} 级" for p in parts)
+        rounds = max(p["assessment"].review_rounds.count() for p in parts)
+        process = (
+            "评价工作按照“受理申请—企业自评与佐证提交—专家组逐条评审—评价机构终审—整改复评—报告编制”的流程实施。"
+            f"委托单位依据{standards}对全部等级的评价细则逐条自评并提交佐证材料；评价机构按技术领域从专家库选取 3 位专家组成第三方评价组，"
+            f"专家独立逐条评审，评价机构对意见不一致的条目作出终审，共开展 {rounds} 轮评审。"
+            "全过程填写、提交、评审、终审记录与佐证材料均在系统中留痕可溯。"
+        )
+    else:
+        scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['achieved']} 级" for p in parts)
+        process = (
+            "评价工作按照“受理申请—企业自评与佐证提交—逐级审核—报告编制—审核批准”的流程实施。"
+            f"委托单位依据{standards}对各级评价细则逐条自评并提交佐证材料，评价组逐级核查佐证材料并作出审核结论，"
+            "每一级经审核通过后方纳入达成等级。全过程填写、提交、审核记录与佐证材料均在系统中留痕可溯。"
+        )
+    return {
+        "s1_2_1": project.overview_text,
+        "s2_1": f"对{project.applicant}研制的“{project.name}”开展{names}评价，验证其是否满足{targets}的要求。"
+        f"评价范围覆盖{scope}的全部评价细则条目。",
+        "s2_3": f"{project.applicant}委托{project.issuer}开展{names}评价，成立了自评估工作组和第三方评价组，各组成员信息见表 2-1。",
+        "s2_4": process,
+    }
+
+
+def front_context(project, report_type, parts, team):
+    """前置信息：封面、扉页与第 1～3 章的内容。未填写的 2.1 / 2.3 / 2.4 / 1.2.1 用系统生成的默认文字。"""
+    front_matter = get_front_matter(project)
+    defaults = _default_sections(project, report_type, parts)
+    sections = {}
+    for field in ReportFrontMatter.SECTION_FIELDS:
+        sections[field] = _paras(getattr(front_matter, field) or defaults.get(field, ""))
+    basis = [{"code": code, "name": name} for code, name in _basis(parts)]
+    if front_matter.standard_version and len(parts) == 1:
+        for row in basis:
+            if row["code"] == "—":
+                row["name"] = front_matter.standard_version
+    issue_date = front_matter.issue_date or timezone.localdate()
+    members = {label: rows for label, rows in team}
+    labels = dict(EvaluationTeamMember.GROUP_CHOICES)
+
+    def rows(group):
+        return [
+            {"role": m.role, "name": m.name, "title": m.title, "specialty": m.specialty, "org": m.org}
+            for m in members.get(labels[group], [])
+        ]
+
+    return {
+        "report_title": TYPE_TITLES[report_type],
+        "header_suffix": HEADER_SUFFIX[report_type],
+        "project_name": project.name,
+        "applicant": project.applicant,
+        "issuer": project.issuer,
+        "specialty": project.specialty.name if project.specialty else "",
+        "application_date": timezone.localtime(project.created_at).date(),
+        "issue_date": issue_date,
+        "issue_date_cn": _cn_year_month(issue_date),
+        "compiled_by": front_matter.compiled_by,
+        "checked_by": front_matter.checked_by,
+        "approved_by": front_matter.approved_by,
+        "sections": sections,
+        "basis": basis,
+        "team_caption": "表 2-1 评价组成员组成",
+        "self_rows": rows(EvaluationTeamMember.GROUP_SELF),
+        "third_rows": rows(EvaluationTeamMember.GROUP_THIRD),
+        "modules": [
+            {"name": m.name, "design": _paras(m.design), "trial": _paras(m.trial), "verification": _paras(m.verification)}
+            for m in front_matter.modules.all()
+        ],
+    }
+
+
+def front_blocks(front):
+    """前置信息的预览块，章节结构与 Word 模板一致。"""
+    sections = front["sections"]
+    blocks = [{"kind": "h1", "text": "1 概况"}]
+    for title, field in CHAPTER_ONE:
+        blocks.append({"kind": "h2" if title.count(".") == 1 else "h3", "text": title})
+        if field:
+            blocks += [{"kind": "p", "text": text} for text in sections[field]]
+    blocks.append({"kind": "h1", "text": "2 评价实施情况"})
+    blocks.append({"kind": "h2", "text": "2.1 评价目的和范围"})
+    blocks += [{"kind": "p", "text": text} for text in sections["s2_1"]]
+    blocks.append({"kind": "h2", "text": "2.2 评价依据"})
+    blocks.append({"kind": "table", "headers": ["标准编号", "标准名称"], "rows": [[b["code"], b["name"]] for b in front["basis"]]})
+    blocks.append({"kind": "h2", "text": "2.3 评价人员"})
+    blocks += [{"kind": "p", "text": text} for text in sections["s2_3"]]
+    blocks.append({"kind": "caption", "text": front["team_caption"]})
+    blocks.append(
         {
             "kind": "team",
-            "headers": TEAM_HEADERS,
-            "widths": TEAM_WIDTHS,
+            "headers": ["角色", "姓名", "职称", "专业及特长", "工作单位"],
             "groups": [
-                (label, [[m.role, m.name, m.title, m.specialty, m.org] for m in members] or [["—", "（待填写）", "", "", ""]])
-                for label, members in team
+                (label, [[r["role"], r["name"], r["title"], r["specialty"], r["org"]] for r in rows] or [["—", "（待填写）", "", "", ""]])
+                for label, rows in (("自评估工作组", front["self_rows"]), ("第三方评价组", front["third_rows"]))
             ],
-        },
-        {"kind": "h2", "text": "2.4 评价过程"},
-        {
-            "kind": "p",
-            "text": "评价工作按照“受理申请—企业自评与佐证提交—逐级审核—报告编制—审核批准”的流程实施。"
-            f"委托单位依据{standards}对各级评价细则逐条自评并提交佐证材料，评价组逐级核查佐证材料并作出审核结论，"
-            "每一级经审核通过后方纳入达成等级。全过程填写、提交、审核记录与佐证材料均在系统中留痕可溯。",
-        },
-    ]
+        }
+    )
+    blocks.append({"kind": "h2", "text": "2.4 评价过程"})
+    blocks += [{"kind": "p", "text": text} for text in sections["s2_4"]]
+    blocks.append({"kind": "h1", "text": "3 评价对象研发信息"})
+    blocks.append({"kind": "h2", "text": "3.1 产品描述"})
+    blocks += [{"kind": "p", "text": text} for text in sections["s3_1"]]
+    for number, title, attr in (("3.2", "设计情况", "design"), ("3.3", "试制情况", "trial"), ("3.4", "验证情况", "verification")):
+        blocks.append({"kind": "h2", "text": f"{number} {title}"})
+        for index, module in enumerate(front["modules"], start=1):
+            blocks.append({"kind": "h3", "text": f"{number}.{index} {module['name']}{title}"})
+            blocks += [{"kind": "p", "text": text} for text in module[attr]]
+    if sections["s3_4_software"]:
+        blocks.append({"kind": "h3", "text": f"3.4.{len(front['modules']) + 1} 软件验证情况"})
+        blocks += [{"kind": "p", "text": text} for text in sections["s3_4_software"]]
+    return blocks
 
-    # 3 评价准则
-    blocks.append({"kind": "h1", "text": "3 评价准则"})
+
+def _tail_blocks(project, report_type, parts, evidence_files, start=4):
+    """系统生成的章节：评价准则、各类评价的等级分析、总结、附录。"""
+    combined = report_type == Report.TYPE_COMBINED
+    blocks = []
+
+    # 评价准则
+    chapter = start
+    blocks.append({"kind": "h1", "text": f"{chapter} 评价准则"})
     table_no = 1
     for index, part in enumerate(parts, start=1):
         if combined:
-            blocks.append({"kind": "h2", "text": f"3.{index} {part['sys'].name}评价准则"})
-        part_blocks, table_no = _criteria_blocks(part, 3, table_no)
+            blocks.append({"kind": "h2", "text": f"{chapter}.{index} {part['sys'].name}评价准则"})
+        part_blocks, table_no = _criteria_blocks(part, chapter, table_no)
         blocks += part_blocks
 
-    # 4（及 5）等级评价
-    chapter = 4
+    # 等级评价
+    chapter += 1
     for part in parts:
         blocks.append({"kind": "h1", "text": f"{chapter} {part['sys'].name}评价"})
         blocks += _analysis_blocks(project, part, chapter)
@@ -327,7 +440,7 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
     for part in parts:
         sys, counts = part["sys"], part["counts"]
         passed_dates = "；".join(
-            f"{sys.abbr} {s['level']} 级于 {timezone.localtime(s['review'].reviewed_at):%Y-%m-%d} 审核通过"
+            f"{sys.abbr} {s['level']} 级于 {timezone.localtime(s['review'].reviewed_at):%Y-%m-%d} {_pass_word(s['review'])}"
             for s in part["sections"]
             if s["review"] and s["review"].reviewed_at
         )
@@ -341,12 +454,11 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
     blocks.append({"kind": "p", "text": f"综上所述，“{project.name}”的{_levels_text(parts)}。", "strong": True})
 
     # 附录A
-    code_col = "关联细则"
     blocks += [
         {"kind": "h1", "text": "附录A 评价支撑信息清单"},
         {
             "kind": "table",
-            "headers": ["编号", "评价支撑信息（佐证材料）", code_col, "SHA-256（前 16 位）"],
+            "headers": ["编号", "评价支撑信息（佐证材料）", "关联细则", "SHA-256（前 16 位）"],
             "rows": [
                 [index, e.original_filename, e.check_item.code, e.sha256[:16]]
                 for index, e in enumerate(evidence_files, start=1)
@@ -356,6 +468,10 @@ def _body_blocks(project, report_type, parts, team, evidence_files):
         },
     ]
     return blocks
+
+
+def _pass_word(review):
+    return "终审通过" if review.source == LevelReview.SOURCE_EXPERT else "审核通过"
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +515,7 @@ def validate_can_generate(project, report_type, actor):
 
 
 # ---------------------------------------------------------------------------
-# Word 渲染
+# 日期
 # ---------------------------------------------------------------------------
 
 
@@ -408,150 +524,6 @@ def _cn_year_month(dt):
     year = "".join(digits[int(ch)] for ch in str(dt.year))
     months = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"]
     return f"{year}年{months[dt.month - 1]}月"
-
-
-def _set_base_style(document):
-    style = document.styles["Normal"]
-    style.font.name = "Times New Roman"
-    style.font.size = Pt(11)
-    style.element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
-    for level, size in ((1, 16), (2, 13)):
-        heading = document.styles[f"Heading {level}"]
-        heading.font.name = "Times New Roman"
-        heading.font.size = Pt(size)
-        heading.font.bold = True
-        heading.font.color.rgb = RGBColor(0, 0, 0)
-        heading.element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
-
-
-def _para(document, text, *, align=None, bold=False, size=None):
-    paragraph = document.add_paragraph()
-    run = paragraph.add_run(text)
-    run.bold = bold
-    if size:
-        run.font.size = Pt(size)
-    if align is not None:
-        paragraph.alignment = align
-    return paragraph
-
-
-def _add_table(document, headers, rows, *, header_bold=True, widths=None):
-    """widths：各列宽度（cm），总宽约 16cm（A4 默认页边距下的正文宽度）。"""
-    table = document.add_table(rows=1, cols=len(headers))
-    table.style = "Table Grid"
-    for index, header in enumerate(headers):
-        cell = table.rows[0].cells[index]
-        cell.text = str(header)
-        if header_bold:
-            for run in cell.paragraphs[0].runs:
-                run.bold = True
-    for row in rows:
-        cells = table.add_row().cells
-        for index, value in enumerate(row):
-            cells[index].text = "" if value is None else str(value)
-    if widths:
-        table.autofit = False
-        for row in table.rows:
-            for index, width in enumerate(widths):
-                row.cells[index].width = Cm(width)
-    for row in table.rows:
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(10)
-    return table
-
-
-def _add_team_table(document, headers, groups, widths):
-    """评价组成员表：每组一行通栏标题，再接表头与成员行。"""
-    table = document.add_table(rows=0, cols=len(headers))
-    table.style = "Table Grid"
-    for label, rows in groups:
-        title = table.add_row().cells
-        merged = title[0].merge(title[-1])
-        merged.text = label
-        merged.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in merged.paragraphs[0].runs:
-            run.bold = True
-        head = table.add_row().cells
-        for index, header in enumerate(headers):
-            head[index].text = header
-            head[index].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in head[index].paragraphs[0].runs:
-                run.bold = True
-        for values in rows:
-            cells = table.add_row().cells
-            for index, value in enumerate(values):
-                cells[index].text = "" if value is None else str(value)
-    table.autofit = False
-    for row in table.rows:
-        for index, width in enumerate(widths):
-            if index < len(row.cells):
-                row.cells[index].width = Cm(width)
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(10)
-    return table
-
-
-def _docx_bytes(report, report_no, version, generated_by):
-    project = report["project"]
-    now = timezone.localtime()
-    document = Document()
-    _set_base_style(document)
-
-    # ---------- 封面 ----------
-    _para(document, f"报告编号：{report_no}", align=WD_ALIGN_PARAGRAPH.RIGHT)
-    for _ in range(4):
-        document.add_paragraph()
-    _para(document, report["title"], align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=24)
-    document.add_paragraph()
-    _para(document, project.name, align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=16)
-    for _ in range(6):
-        document.add_paragraph()
-    _para(document, project.issuer, align=WD_ALIGN_PARAGRAPH.CENTER, size=14)
-    _para(document, _cn_year_month(now), align=WD_ALIGN_PARAGRAPH.CENTER, size=12)
-    document.add_page_break()
-
-    # ---------- 扉页：编制 / 审核 / 批准 ----------
-    _para(document, report["title"], align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=16)
-    _para(document, project.name, align=WD_ALIGN_PARAGRAPH.CENTER, size=12)
-    for _ in range(4):
-        document.add_paragraph()
-    for label in ("编 制：", "审 核：", "批 准："):
-        _para(document, f"{label}                    ", size=12)
-        document.add_paragraph()
-    _para(document, project.issuer, align=WD_ALIGN_PARAGRAPH.CENTER, size=12)
-    document.add_page_break()
-
-    # ---------- 正文 ----------
-    for block in report["blocks"]:
-        kind = block["kind"]
-        if kind == "h1":
-            document.add_heading(block["text"], level=1)
-        elif kind == "h2":
-            document.add_heading(block["text"], level=2)
-        elif kind == "p":
-            _para(document, block["text"], bold=block.get("strong", False))
-        elif kind == "caption":
-            document.add_paragraph()
-            _para(document, block["text"], align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
-        elif kind == "table":
-            rows = block["rows"]
-            if block.get("info"):
-                rows = rows + [
-                    ["报告版本", f"V{version}"],
-                    ["报告生成时间", f"{now:%Y-%m-%d %H:%M}"],
-                    ["报告生成人", display_name(generated_by)],
-                ]
-            _add_table(document, block["headers"], rows, widths=block.get("widths"))
-        elif kind == "team":
-            _add_team_table(document, block["headers"], block["groups"], block["widths"])
-
-    buffer = BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -564,17 +536,32 @@ def base_report_no(project, now=None):
     return project.report_no or f"ITEI-{now:%Y}-{str(project.id)[:6].upper()}"
 
 
-@transaction.atomic
+def _make_pdf(docx_bytes):
+    """有转换工具时生成 PDF：返回 (Word 字节, PDF 字节或 None, 转换方式)。Word 转换会刷新目录页码。"""
+    try:
+        updated, pdf_bytes, converter = pdf_service.convert(docx_bytes)
+    except pdf_service.PdfError as exc:
+        logger.warning("报告 PDF 未生成：%s", exc)
+        return docx_bytes, None, ""
+    if converter == pdf_service.WORD:
+        updated = docx_render.clear_update_fields(updated)
+    return updated, pdf_bytes, converter
+
+
 def generate_report(project, report_type, actor):
+    """生成新版本报告。Word 排版与 PDF 转换在数据库事务之外完成，避免长时间占用写锁。"""
     validate_can_generate(project, report_type, actor)
     report = build_report(project, report_type)
     now = timezone.localtime()
-
     max_version = project.reports.filter(report_type=report_type).aggregate(v=Max("version"))["v"] or 0
     version = max_version + 1
     report_no = f"{base_report_no(project, now)}-{TYPE_SUFFIX[report_type]}"
+    payload, pdf_bytes, converter = _make_pdf(docx_render.render(report, report_no))
+    with transaction.atomic():
+        return _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter)
 
-    payload = _docx_bytes(report, report_no, version, actor)
+
+def _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter):
     sha256 = hashlib.sha256(payload).hexdigest()
     filename = f"{report['title']}_{project.name}_V{version}.docx"
     levels = {part["sys"].code: part["achieved"] for part in report["parts"]}
@@ -590,7 +577,13 @@ def generate_report(project, report_type, actor):
         mrl_level=levels.get(MRL),
         generated_by=actor,
     )
-    record.file.save(filename, ContentFile(payload), save=True)
+    record.file.save(filename, ContentFile(payload), save=False)
+    if pdf_bytes:
+        record.pdf_filename = filename[:-5] + ".pdf"
+        record.pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        record.pdf_converter = converter
+        record.pdf_file.save(record.pdf_filename, ContentFile(pdf_bytes), save=False)
+    record.save()
 
     if not project.report_no:
         project.report_no = base_report_no(project, now)
@@ -608,17 +601,67 @@ def generate_report(project, report_type, actor):
         object_id=str(record.id),
         object_repr=filename,
         project=project,
-        after={"report_type": report_type, "version": version, "sha256": sha256, "levels": levels},
+        after={
+            "report_type": report_type,
+            "version": version,
+            "sha256": sha256,
+            "levels": levels,
+            "pdf_sha256": record.pdf_sha256,
+            "pdf_converter": converter,
+        },
     )
     # 生成即视为同意该类型报告的待审核导出申请
     for pending in project.report_requests.filter(report_type=report_type, status=ReportRequest.STATUS_PENDING):
         _mark_request_approved(pending, actor, record)
+    notify(
+        project.owner,
+        "report.generate",
+        f"{record.get_report_type_display()} V{version} 已出具，可以下载",
+        body=f"项目：{project.name}\n报告编号：{report_no}",
+        link=f"{report_link(project)}?type={report_type}",
+        project=project,
+        email=True,
+    )
+    return record
+
+
+def make_report_pdf(record, actor):
+    """为已生成、但当时没有转换工具的报告版本补生成 PDF（Word 文件保持不变）。"""
+    if not can_generate_report(actor):
+        raise PermissionDenied("报告由评价机构管理员生成。")
+    if record.pdf_file:
+        raise ValidationError("该版本已有 PDF。")
+    with record.file.open("rb") as handle:
+        docx_bytes = handle.read()
+    try:
+        _, pdf_bytes, converter = pdf_service.convert(docx_bytes)
+    except pdf_service.PdfError as exc:
+        raise ValidationError(str(exc)) from exc
+    with transaction.atomic():
+        record.pdf_filename = record.filename[:-5] + ".pdf"
+        record.pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        record.pdf_converter = converter
+        record.pdf_file.save(record.pdf_filename, ContentFile(pdf_bytes), save=False)
+        record.save(update_fields=["pdf_file", "pdf_filename", "pdf_sha256", "pdf_converter"])
+        AuditLog.objects.create(
+            actor=actor,
+            action="report.pdf",
+            model_name="Report",
+            object_id=str(record.id),
+            object_repr=record.pdf_filename,
+            project=record.project,
+            after={"pdf_sha256": record.pdf_sha256, "pdf_converter": converter},
+        )
     return record
 
 
 # ---------------------------------------------------------------------------
 # 报告导出申请：企业申请 → 管理员审核通过即生成报告
 # ---------------------------------------------------------------------------
+
+
+def report_link(project):
+    return reverse("reports:report_preview", args=[project.id])
 
 
 def get_pending_request(project, report_type):
@@ -658,10 +701,17 @@ def request_export(project, report_type, actor):
         raise ValidationError("该报告已有导出申请正在审核中，请等待审核结果。")
     request = ReportRequest.objects.create(project=project, report_type=report_type, requested_by=actor)
     _log_request(actor, "report.request", request, after={"report_type": report_type})
+    notify_admins(
+        "report.request",
+        f"{project.applicant}申请导出{TYPE_TITLES[report_type]}，待审批",
+        body=f"项目：{project.name}",
+        link=f"{report_link(project)}?type={report_type}",
+        project=project,
+        category=CATEGORY_TODO,
+    )
     return request
 
 
-@transaction.atomic
 def approve_request(request, actor):
     if not can_generate_report(actor):
         raise PermissionDenied("导出申请由评价机构管理员审核。")
@@ -696,4 +746,12 @@ def reject_request(request, actor, reason):
     request.reject_reason = reason
     request.save(update_fields=["status", "reviewed_by", "reviewed_at", "reject_reason"])
     _log_request(actor, "report.request_reject", request, after={"reason": reason})
+    notify(
+        request.project.owner,
+        "report.request_reject",
+        f"{request.get_report_type_display()}导出申请被驳回",
+        body=f"项目：{request.project.name}\n驳回原因：{reason}",
+        link=f"{report_link(request.project)}?type={request.report_type}",
+        project=request.project,
+    )
     return request

@@ -34,9 +34,16 @@
             <input class="input" type="text" value="{{ issuer_name }}" disabled>
           </div>
         </div>
-        <div class="field">
-          <label class="field-label" for="{{ form.domain.id_for_label }}">应用领域</label>
-          {{ form.domain }}
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label" for="{{ form.specialty.id_for_label }}">所属技术领域</label>
+            {{ form.specialty }}
+            <div class="hint">评价机构按技术领域分配评审专家</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="{{ form.domain.id_for_label }}">应用领域</label>
+            {{ form.domain }}
+          </div>
         </div>
       </div>
     </div>

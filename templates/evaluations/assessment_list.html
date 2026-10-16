@@ -16,6 +16,12 @@
       </div>
     </div>
     <div class="actions">
+      {% if current_is_admin %}
+      <a class="btn ghost sm" href="{% url 'evaluations:recycle_bin' %}">
+        <svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+        回收站{% if recycle_count %}（{{ recycle_count }}）{% endif %}
+      </a>
+      {% endif %}
       {% if can_create %}
         {% if rules_ready %}
         <a class="btn primary" href="{% url 'evaluations:project_create' %}?system={{ sys.code }}">
@@ -68,7 +74,7 @@
             <th>技术类型</th>
             <th class="num">目标等级</th>
             <th class="num">已通过</th>
-            <th>自评进度（目标级内）</th>
+            <th title="逐级审核方式统计目标等级以内的条目，专家评审方式统计全部等级">自评进度</th>
             <th>下一步</th>
             <th class="nowrap">操作</th>
           </tr>

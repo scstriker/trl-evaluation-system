@@ -13,6 +13,10 @@ from apps.rules.systems import MRL
 @pytest.fixture(autouse=True)
 def _sandbox_media(settings):
     settings.MEDIA_ROOT = tempfile.mkdtemp(prefix="trl-test-media-")
+    # 页面访问时的期限检查默认关闭，由 test_deadlines 单独验证
+    settings.DEADLINE_CHECK_ENABLED = False
+    # 生成报告时默认不调用 Word 转 PDF（慢），由 test_report_template 单独验证
+    settings.REPORT_PDF_CONVERTER = "none"
 
 
 @pytest.fixture

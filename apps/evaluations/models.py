@@ -9,6 +9,13 @@ from apps.rules.systems import SYSTEM_CHOICES, TRL, get_system
 DEFAULT_ISSUER = "机械工业仪器仪表综合技术经济研究所"
 
 
+class ActiveProjectManager(models.Manager):
+    """默认管理器只取未删除的项目；回收站与彻底删除使用 all_objects。"""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class EvaluationProject(models.Model):
     """技术项目：企业申报的评价对象，下挂技术就绪度 / 制造成熟度两类评价。"""
 
@@ -27,6 +34,9 @@ class EvaluationProject(models.Model):
     applicant = models.CharField("委托（受评）单位", max_length=255)
     issuer = models.CharField("评价报告出具单位", max_length=255, default=DEFAULT_ISSUER)
     domain = models.CharField("应用领域", max_length=255, blank=True)
+    specialty = models.ForeignKey(
+        "rules.Specialty", null=True, blank=True, on_delete=models.SET_NULL, related_name="projects", verbose_name="所属技术领域"
+    )
     tech_type = models.CharField("技术类型", max_length=32, choices=TECH_TYPE_CHOICES)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="projects")
     report_no = models.CharField("报告编号", max_length=64, blank=True)
@@ -34,12 +44,26 @@ class EvaluationProject(models.Model):
     remark = models.TextField("备注", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # 删除即进入回收站（软删除），管理员可恢复或彻底删除
+    deleted_at = models.DateTimeField("删除时间", null=True, blank=True, db_index=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="deleted_projects"
+    )
+    delete_reason = models.CharField("删除理由", max_length=255, blank=True)
+
+    objects = ActiveProjectManager()
+    all_objects = models.Manager()
 
     class Meta:
         ordering = ["-updated_at", "-created_at"]
+        base_manager_name = "all_objects"
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
 
     def get_assessment(self, system):
         return next((a for a in self.assessments.all() if a.system == system), None)
@@ -56,11 +80,20 @@ class Assessment(models.Model):
         (STATUS_REPORTED, "已出报告"),
     ]
 
+    # 评审方式：管理员逐级审核（原流程）/ 专家评审（全部等级填完后申报，三位专家逐条评审，管理员终审）
+    MODE_DIRECT = "direct"
+    MODE_EXPERT = "expert"
+    MODE_CHOICES = [
+        (MODE_DIRECT, "管理员逐级审核"),
+        (MODE_EXPERT, "专家评审"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(EvaluationProject, on_delete=models.CASCADE, related_name="assessments")
     system = models.CharField("评价类别", max_length=8, choices=SYSTEM_CHOICES)
     target_level = models.PositiveSmallIntegerField("目标等级")
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_IN_PROGRESS)
+    review_mode = models.CharField("评审方式", max_length=8, choices=MODE_CHOICES, default=MODE_DIRECT)
     summary_text = models.TextField("评价综述", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -82,6 +115,10 @@ class Assessment(models.Model):
     @property
     def is_trl(self):
         return self.system == TRL
+
+    @property
+    def is_expert_mode(self):
+        return self.review_mode == self.MODE_EXPERT
 
 
 class CheckItem(models.Model):
@@ -181,6 +218,10 @@ class LevelReview(models.Model):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField("审核意见", blank=True)
+    # 专家评审方式下，管理员终审后按“自第 1 级起全部通过的连续级别”写入，来源记为 expert
+    SOURCE_DIRECT = "direct"
+    SOURCE_EXPERT = "expert"
+    source = models.CharField(max_length=8, default=SOURCE_DIRECT)
 
     class Meta:
         constraints = [
