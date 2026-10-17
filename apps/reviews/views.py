@@ -41,52 +41,27 @@ def _get_round_or_404(round_id):
 
 
 # ---------------------------------------------------------------------------
-# 企业：评审方式、申报、提交整改、评审记录
+# 管理员：对企业已提交的级别指派专家评审；评审记录
 # ---------------------------------------------------------------------------
 
 
-@login_required
+@admin_required
 @require_POST
-def set_mode(request, assessment_id):
+def start_review(request, assessment_id):
     assessment = _get_assessment_or_404(request, assessment_id)
+    reuse = request.POST.get("reuse") == "1"
     try:
-        services.set_review_mode(assessment, request.user, request.POST.get("mode"))
-        if assessment.is_expert_mode:
-            messages.success(request, "已改为专家评审方式。请填写全部等级的条目，填完后申报专家评审。")
-        else:
-            messages.success(request, "已改为管理员逐级审核方式。超出目标等级的条目不再需要填写。")
+        review_round = services.start_expert_review(
+            assessment, request.user, reuse_experts=reuse, review_days=request.POST.get("review_days")
+        )
     except (ValidationError, PermissionDenied) as exc:
         messages.error(request, _errors(exc))
-    return redirect(_assessment_url(assessment))
-
-
-@login_required
-@require_POST
-def apply_review(request, assessment_id):
-    assessment = _get_assessment_or_404(request, assessment_id)
-    try:
-        if request.POST.get("confirm") != "1":
-            raise ValidationError("请先勾选确认填写内容真实、准确。")
-        services.apply_expert_review(assessment, request.user)
-        messages.success(request, "已申报专家评审。评价机构组建专家组后开始评审，评审期间条目冻结。")
-    except (ValidationError, PermissionDenied) as exc:
-        messages.error(request, _errors(exc))
-    return redirect(_assessment_url(assessment))
-
-
-@login_required
-@require_POST
-def resubmit(request, round_id):
-    review_round = _get_round_or_404(round_id)
-    get_visible_project_or_404(request.user, review_round.assessment.project_id)
-    try:
-        if request.POST.get("confirm") != "1":
-            raise ValidationError("请先勾选确认已按整改要求修改。")
-        new_round = services.resubmit_rectification(review_round, request.user)
-        messages.success(request, f"整改已提交，进入第 {new_round.number} 轮复评。复评只针对上一轮未通过的条目。")
-    except (ValidationError, PermissionDenied) as exc:
-        messages.error(request, _errors(exc))
-    return redirect(_assessment_url(review_round.assessment))
+        return redirect(_assessment_url(assessment, anchor=""))
+    if review_round.status == ReviewRound.STATUS_ASSIGNING:
+        messages.success(request, f"已建立第 {review_round.number} 轮专家评审，请选择评审专家。")
+        return redirect("reviews:assign", round_id=review_round.id)
+    messages.success(request, f"已由原专家组开展第 {review_round.number} 轮复评，专家会收到站内私信。")
+    return redirect("reviews:round_detail", round_id=review_round.id)
 
 
 @login_required
@@ -362,16 +337,12 @@ def finalize(request, round_id):
         if request.POST.get("confirm") != "1":
             raise ValidationError("请先勾选确认终审结果。")
         services.finalize_round(
-            review_round,
-            request.user,
-            request.POST.get("decision"),
-            request.POST.get("rectify_days"),
-            request.POST.get("summary"),
+            review_round, request.user, request.POST.get("rectify_days"), request.POST.get("summary")
         )
         if review_round.status == ReviewRound.STATUS_RECTIFYING:
-            messages.success(request, "终审结果已发给企业，等待企业整改。")
+            messages.success(request, "终审结果已发给企业：全部通过的级别已审核通过，有不通过条目的级别已退回整改。")
         else:
-            messages.success(request, "专家评审已结束，可以生成评价报告。")
+            messages.success(request, "终审完成，已提交的级别审核通过。")
     except (ValidationError, PermissionDenied) as exc:
         messages.error(request, _errors(exc))
     return redirect("reviews:round_detail", round_id=review_round.id)

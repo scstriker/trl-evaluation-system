@@ -142,13 +142,6 @@ def report_availability(project):
                 missing = True
                 reasons.append(f"该项目未开展{get_system(system).name}评价")
                 continue
-            if assessment.is_expert_mode:
-                from apps.reviews.services import report_block_reason
-
-                reason = report_block_reason(assessment)
-                if reason:
-                    reasons.append(reason)
-                continue
             achieved = get_achieved_level(assessment)
             if achieved < assessment.target_level:
                 sys = assessment.sys
@@ -298,18 +291,16 @@ def _default_sections(project, report_type, parts):
     names = "和".join(part["sys"].name for part in parts)
     targets = "；".join(f"{p['sys'].name} {p['target']} 级（{p['sys'].abbr} {p['target']}）" for p in parts)
     standards = "、".join(p["sys"].standard for p in parts)
-    expert = any(p["assessment"].is_expert_mode for p in parts)
-    if expert:
-        scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['sys'].max_level} 级" for p in parts)
-        rounds = max(p["assessment"].review_rounds.count() for p in parts)
+    scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['achieved']} 级" for p in parts)
+    rounds = sum(p["assessment"].review_rounds.exclude(outcome="cancelled").count() for p in parts)
+    if rounds:
         process = (
-            "评价工作按照“受理申请—企业自评与佐证提交—专家组逐条评审—评价机构终审—整改复评—报告编制”的流程实施。"
-            f"委托单位依据{standards}对全部等级的评价细则逐条自评并提交佐证材料；评价机构按技术领域从专家库选取 3 位专家组成第三方评价组，"
-            f"专家独立逐条评审，评价机构对意见不一致的条目作出终审，共开展 {rounds} 轮评审。"
+            "评价工作按照“受理申请—企业自评与佐证提交—评价机构审核或指派专家组逐条评审—终审—整改复评—报告编制”的流程实施。"
+            f"委托单位依据{standards}对各级评价细则逐条自评并提交佐证材料；评价机构对提交的级别按技术领域从专家库选取 3 位专家组成第三方评价组，"
+            f"专家独立逐条评审，评价机构对意见不一致的条目作出终审，共开展 {rounds} 轮专家评审。"
             "全过程填写、提交、评审、终审记录与佐证材料均在系统中留痕可溯。"
         )
     else:
-        scope = "；".join(f"{p['sys'].abbr} 1 级至 {p['sys'].abbr} {p['achieved']} 级" for p in parts)
         process = (
             "评价工作按照“受理申请—企业自评与佐证提交—逐级审核—报告编制—审核批准”的流程实施。"
             f"委托单位依据{standards}对各级评价细则逐条自评并提交佐证材料，评价组逐级核查佐证材料并作出审核结论，"

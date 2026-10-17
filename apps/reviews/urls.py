@@ -16,11 +16,9 @@ urlpatterns = [
     path("assignments/<int:assignment_id>/reassign/", views.reassign, name="reassign"),
     path("assignments/<int:assignment_id>/remind/", views.remind, name="remind"),
     path("assignments/<int:assignment_id>/extend/", views.extend, name="extend"),
-    # 企业
-    path("assessments/<uuid:assessment_id>/mode/", views.set_mode, name="set_mode"),
-    path("assessments/<uuid:assessment_id>/apply/", views.apply_review, name="apply"),
+    path("assessments/<uuid:assessment_id>/start/", views.start_review, name="start"),
+    # 企业与管理员
     path("assessments/<uuid:assessment_id>/history/", views.history, name="history"),
-    path("rounds/<uuid:round_id>/resubmit/", views.resubmit, name="resubmit"),
     # 专家
     path("tasks/", views.task_list, name="task_list"),
     path("tasks/<int:assignment_id>/", views.task_detail, name="task_detail"),

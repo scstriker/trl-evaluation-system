@@ -16,7 +16,7 @@
   </div>
   {% elif ready_for_report %}
   <div class="alert success">
-    <strong>{% if assessment.is_expert_mode %}专家评审已结束，达成 {{ sys.abbr }} {{ achieved }}。{% else %}已全部审核通过至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。{% endif %}</strong>
+    <strong>已全部审核通过至目标等级 {{ sys.abbr }} {{ assessment.target_level }}。</strong>
     {% if is_admin %}<a href="{% url 'reports:report_preview' project.id %}?type={{ sys.code }}">前往生成报告 →</a>{% else %}等待评价机构出具评价报告。{% endif %}
   </div>
   {% endif %}
@@ -48,7 +48,7 @@
   <div class="alert info">第 {{ submitted_text }} 级已提交，等待评价机构审核；审核期间这些级别不能修改。</div>
   {% endif %}
 
-  {% if assessment.status == 'in_progress' or assessment.is_expert_mode %}{% include "reviews/_expert_panel.html" %}{% endif %}
+  {% include "reviews/_expert_panel.html" %}
 
   {% if is_admin and pending_target %}
   <div class="card review-panel">
@@ -79,7 +79,11 @@
       <span class="small muted">提交人 {{ submitted_review.submitted_by|who }} · {{ submitted_review.submitted_at|date:"Y-m-d H:i" }}</span>
     </div>
     <div class="card-body">
-      <p class="mt-0">请逐级核查企业的自评结论、满足情况说明与佐证材料。系统不做自动达标判断，是否通过由评价机构确认；需要企业修改的，填写审核意见后退回。</p>
+      {% if expert_round %}
+      <p class="mt-0">已提交的级别正在进行第 {{ expert_round.number }} 轮专家评审（{{ expert_round.get_status_display }}），终审后系统按结果审核通过或退回，此期间不能直接通过或退回。<a href="{% url 'reviews:round_detail' expert_round.id %}">前往评审管理 →</a></p>
+      {% else %}
+      <p class="mt-0">企业已提交，请决定审核方式：<strong>自行审核</strong>时逐级核查自评结论、满足情况说明与佐证材料后通过或退回；也可以<strong>指派专家评审</strong>，由 3 位领域专家逐条评审后终审。系统不做自动达标判断。</p>
+      {% endif %}
       {% if review_attention.not_satisfied or review_attention.no_evidence %}
       <div class="attention">
         {% if review_attention.not_satisfied %}<div><span class="tag warning">自评不满足 {{ review_attention.not_satisfied|length }} 条</span>
@@ -93,6 +97,7 @@
         {% for r in resubmitted_reviews %}<div>第 {{ r.level }} 级为退回后重新提交，上次审核意见：{{ r.comment }}</div>{% endfor %}
       </div>
       {% endif %}
+      {% if not expert_round %}
       <div class="flex" style="margin-top:16px">
         {% if pass_plan %}
         <button class="btn primary" type="button" data-modal-open="pass-modal">
@@ -102,7 +107,16 @@
         <span class="small muted">第 {{ achieved|add:1 }} 级尚未提交，需企业提交后才能按顺序审核通过后续级别。</span>
         {% endif %}
         <button class="btn secondary" type="button" data-modal-open="return-modal">退回修改…</button>
+        {% if expert_panel.can_start %}
+        <button class="btn secondary" type="button" data-modal-open="expert-start-modal">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0M3 21v-2a4 4 0 0 1 4-4h4M16 19h6M19 16v6"/></svg>
+          {% if expert_panel.previous_experts %}专家复评…{% else %}指派专家评审…{% endif %}
+        </button>
+        {% elif expert_panel.start_blockers %}
+        <span class="small muted">{{ expert_panel.start_blockers.0 }}</span>
+        {% endif %}
       </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -114,7 +128,7 @@
         {% elif is_owner %}<button class="btn ghost sm kpi-action" type="button" data-modal-open="target-modal">申请调整目标等级…</button>
         {% else %}{{ sys.standard }}{% endif %}</span></div>
     <div class="kpi"><span class="l">已审核通过</span><span class="v">{% if achieved %}{{ sys.abbr }} {{ achieved }}{% else %}—{% endif %}</span><span class="d">自第 1 级起连续通过的最高级别</span></div>
-    <div class="kpi"><span class="l">自评进度（{% if assessment.is_expert_mode %}全部等级{% else %}目标级内{% endif %}）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
+    <div class="kpi"><span class="l">自评进度（目标级内）</span><span class="v">{{ scope.completed }}<small>/ {{ scope.total }} 条</small></span><span class="d">未填写 {{ scope.unevaluated }} 条</span></div>
     <div class="kpi"><span class="l">满足 / 不满足 / 不适用</span><span class="v">{{ scope.satisfied }} / {{ scope.not_satisfied }} / {{ scope.not_applicable }}</span><span class="d">不满足、不适用需说明理由</span></div>
   </div>
 
@@ -137,7 +151,7 @@
       <div class="level-ladder" style="--levels:{{ sys.max_level }}" role="tablist" aria-label="{{ sys.abbr }} 等级">
         {% for s in states %}
         {% if s.state == 'out_of_scope' %}
-        <span class="lv-step out h{{ s.level }}" title="第 {{ s.level }} 级超出目标等级，无需填写{% if is_owner %}（改为专家评审后需填写全部等级）{% endif %}">
+        <span class="lv-step out h{{ s.level }}" title="第 {{ s.level }} 级超出目标等级，无需填写">
           <span class="lvl">{{ s.level }}</span><span class="st">超出目标</span>
         </span>
         {% else %}
@@ -151,11 +165,7 @@
         {% endfor %}
       </div>
       <div class="ladder-legend small muted">
-        {% if assessment.is_expert_mode %}
-        <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>专家评审中</span><span><i class="sw returned"></i>需整改</span><span><i class="sw ready"></i>填写中</span><span><i class="sw out"></i>未通过</span>
-        {% else %}
-        <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>已提交待审核</span><span><i class="sw returned"></i>已退回</span><span><i class="sw ready"></i>填写中 / 待提交</span><span><i class="sw out"></i>超出目标等级</span>
-        {% endif %}
+        <span><i class="sw passed"></i>已通过</span><span><i class="sw submitted"></i>已提交待审核 / 专家评审中</span><span><i class="sw returned"></i>已退回</span><span><i class="sw ready"></i>填写中 / 待提交</span><span><i class="sw out"></i>超出目标等级</span>
       </div>
     </div>
   </div>
@@ -175,9 +185,7 @@
       {% elif current_state.state == 'submitted' %}<span class="tag info">已提交 · 等待审核</span>
       {% elif current_state.state == 'returned' %}<span class="tag warning">已退回 · 请修改</span>
       {% elif current_state.state == 'expert_review' %}<span class="tag info">专家评审中 · 内容冻结</span>
-      {% elif current_state.state == 'rectify' %}<span class="tag warning">需整改 · 只改未通过的条目</span>
-      {% elif current_state.state == 'not_passed' %}<span class="tag neutral">专家评审未通过</span>
-      {% elif current_state.state == 'ready' %}<span class="tag info">{% if assessment.is_expert_mode %}已填写完整{% else %}已填写完整 · 待提交{% endif %}</span>
+      {% elif current_state.state == 'ready' %}<span class="tag info">已填写完整 · 待提交</span>
       {% else %}<span class="tag neutral">填写中</span>{% endif %}
     </div>
   </div>
@@ -379,6 +387,38 @@
         <div class="modal-foot">
           <button class="btn secondary" type="button" data-modal-close>取消</button>
           <button class="btn primary" type="submit">确认退回</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理员：指派专家评审 ---- #}
+  {% if is_admin and expert_panel.can_start %}
+  <div class="modal-backdrop" id="expert-start-modal" role="dialog" aria-modal="true" aria-labelledby="expert-start-title">
+    <div class="modal">
+      <div class="modal-head"><h3 id="expert-start-title">{% if expert_panel.previous_experts %}专家复评{% else %}指派专家评审{% endif %} · 第 {{ submitted_text }} 级</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+      <form method="post" action="{% url 'reviews:start' assessment.id %}">
+        {% csrf_token %}
+        <div class="modal-body form-grid">
+          <p class="mt-0 mb-0">系统把已提交级别中尚未通过专家评审的 <strong>{{ expert_panel.scope_count }} 条</strong>存为提交留档，交由 3 位专家逐条评审。评审期间这些级别冻结；终审后，全部通过的级别自动审核通过，有不通过条目的级别退回企业整改。企业看不到专家身份。</p>
+          {% if expert_panel.previous_experts %}
+          <div class="option-list">
+            <label class="option"><input type="radio" name="reuse" value="1" checked><span class="t">请原专家组复评</span><span class="d">{% for a in expert_panel.previous_experts %}{{ a.expert.expert_profile.name }}{% if not forloop.last %}、{% endif %}{% endfor %}（已签保密承诺，直接进入评审）</span></label>
+            <label class="option"><input type="radio" name="reuse" value="0"><span class="t">重新选择专家</span><span class="d">建立新一轮后到分配页面选择 3 位专家</span></label>
+          </div>
+          {% else %}
+          <input type="hidden" name="reuse" value="0">
+          <p class="small muted mt-0 mb-0">确认后进入分配页面，按技术领域选择 3 位专家。</p>
+          {% endif %}
+          <div class="field" style="max-width:260px">
+            <label class="field-label" for="start-days">评审期限（天）</label>
+            <input class="input" type="number" id="start-days" name="review_days" min="1" max="60" value="{{ expert_panel.review_days }}">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn secondary" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认{% if expert_panel.previous_experts %}复评{% else %}指派{% endif %}</button>
         </div>
       </form>
     </div>

@@ -88,8 +88,6 @@ def assessment_list(request, system):
             bucket = "submitted"
         elif assessment.status == Assessment.STATUS_REPORTED:
             bucket = "reported"
-        elif assessment.is_expert_mode:
-            bucket = review_services.list_bucket(assessment)
         elif achieved >= assessment.target_level:
             bucket = "ready"
         elif submitted:
@@ -212,17 +210,12 @@ def _default_level(assessment, states, admin):
     if admin:
         wanted_states = (LevelReview.STATUS_SUBMITTED, services.STATE_EXPERT_REVIEW)
     else:
-        wanted_states = (LevelReview.STATUS_RETURNED, services.STATE_RECTIFY, services.STATE_DRAFT, services.STATE_READY)
+        wanted_states = (LevelReview.STATUS_RETURNED, services.STATE_DRAFT, services.STATE_READY)
     for wanted in wanted_states:
         for state in states:
             if state["state"] == wanted:
                 return state["level"]
-    return max(1, min(_max_view_level(assessment), services.get_achieved_level(assessment) or 1))
-
-
-def _max_view_level(assessment):
-    """逐级审核方式只看到目标等级；专家评审方式全部等级都要填写。"""
-    return assessment.sys.max_level if assessment.is_expert_mode else assessment.target_level
+    return max(1, min(assessment.target_level, services.get_achieved_level(assessment) or 1))
 
 
 @login_required
@@ -252,7 +245,7 @@ def assessment_detail(request, project_id, system):
         view_level = int(request.GET.get("level") or _default_level(assessment, states, admin))
     except (TypeError, ValueError):
         view_level = 1
-    view_level = max(1, min(_max_view_level(assessment), view_level))
+    view_level = max(1, min(assessment.target_level, view_level))
     current_state = states[view_level - 1]
 
     items = list(
@@ -267,12 +260,12 @@ def assessment_detail(request, project_id, system):
     ).select_related("actor__enterprise")[:300]:
         logs_by_item.setdefault(log.object_id, []).append(log)
     level_editable = owner and services.is_level_editable(assessment, view_level, reviews)
-    editable_ids = review_services.editable_item_ids(assessment) if assessment.is_expert_mode else None
-    feedback = review_services.item_feedback_map(assessment) if assessment.is_expert_mode else {}
+    locked_ids = review_services.expert_locked_item_ids(assessment) if level_editable else set()
+    feedback = review_services.item_feedback_map(assessment)
     for item in items:
         item.history = logs_by_item.get(str(item.id), [])
-        # 专家评审整改阶段按条目开放：只能改上一轮判为不通过的条目
-        item.can_edit = level_editable and (editable_ids is None or item.id in editable_ids)
+        # 因专家评审退回的级别，只开放未通过专家评审的条目
+        item.can_edit = level_editable and item.id not in locked_ids
         item.expert_feedback = feedback.get(item.id)
 
     groups = []
@@ -346,7 +339,7 @@ def assessment_detail(request, project_id, system):
             "resubmitted_reviews": [reviews[level] for level in submitted_levels if reviews[level].comment],
             "ready_for_report": services.ready_for_report(assessment, reviews),
             "expert_panel": review_services.panel_context(assessment, request.user, admin, owner),
-            "max_view_level": _max_view_level(assessment),
+            "expert_round": review_services.open_round(assessment),
             "reopen_item": request.GET.get("item", ""),
             "open_modal": open_modal,
             "admin_can_edit_text": admin_can_edit_text,

@@ -73,7 +73,7 @@ def _rectifying(enterprise, admin_user, experts):
     services.confirm_unanimous(review_round, admin_user)
     for ri in review_round.items.filter(final_result="fail"):
         services.rule_item(ri, admin_user, "fail", feedback="补充")
-    services.finalize_round(review_round, admin_user, "rectify", rectify_days=14)
+    services.finalize_round(review_round, admin_user, rectify_days=14)
     review_round.refresh_from_db()
     return project, review_round
 

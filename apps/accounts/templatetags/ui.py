@@ -31,3 +31,11 @@ def split_words(text):
 @register.filter
 def get_field(form, name):
     return form[name]
+
+
+@register.filter
+def levels_of(round_items):
+    """专家评审轮次覆盖的级别，例如“1~3”。"""
+    from apps.evaluations.services import format_levels
+
+    return format_levels(sorted({ri.check_item.level for ri in round_items.select_related("check_item")}))

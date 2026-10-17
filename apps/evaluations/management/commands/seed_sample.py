@@ -18,7 +18,7 @@ from docx import Document
 from apps.accounts.forms import credit_code_check_char
 from apps.accounts.models import EnterpriseProfile
 from apps.evaluations import services
-from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, EvaluationTeamMember
+from apps.evaluations.models import CheckItem, EvaluationProject, EvaluationTeamMember
 from apps.evidence.services import upload_evidence_file
 from apps.experts.sample_data import seed_sample_experts
 from apps.notifications.models import Notification
@@ -124,9 +124,9 @@ DEFAULT_STATEMENT = "经评价组核查相关佐证材料，该具体化等级�
 # 专家评审样例中判“不通过”的条目及建议
 FAIL_SUGGESTIONS = {
     "TRL5-HW-2": "请补充模拟使用环境下的关键性能测试报告，并说明测试条件与实际工况的对应关系。",
-    "TRL5-HW-3": "请补充关键部件在模拟环境下的可靠性试验记录（含试验条件、样本数量和失效判据）。",
+    "TRL5-HW-3": "请补充功能部件的设计输入、设计评审记录和设计变更记录，现有材料只有总体方案。",
     "TRL6-HW-2": "请补充系统级原型在相关环境中的验证报告，现有材料只覆盖部件级验证。",
-    "TRL7-HW-1": "请补充在用户现场连续运行的试用记录和用户使用报告。",
+    "TRL6-HW-4": "请补充系统需求逐条检验记录（需求编号、检验方法、结论），现有设计文档缺少需求检验部分。",
 }
 
 
@@ -285,7 +285,9 @@ class Command(BaseCommand):
 
         self._expert_samples(admin, gangyan, hexin, zhongnan)
         self.stdout.write(
-            self.style.SUCCESS("专家评审样例已生成：评审中（一位专家逾期）/ 整改中 / 评审结束并出具报告 各一个")
+            self.style.SUCCESS(
+                "专家评审样例已生成：专家评审中（一位专家逾期）/ 专家评审后整改中 / 专家评审通过并出具报告 / 已提交待评价机构决定审核方式 各一个"
+            )
         )
 
     # ------------------------------------------------------------------
@@ -346,11 +348,10 @@ class Command(BaseCommand):
     # 专家评审样例
     # ------------------------------------------------------------------
     def _expert_fill(self, project, owner):
-        """专家评审方式：填写全部等级；每级第一条挂一份佐证，控制样例体积。"""
+        """填写目标等级以内的全部条目并一次提交审核；每级第一条挂一份佐证，控制样例体积。"""
         assessment = project.get_assessment(TRL)
-        review_services.set_review_mode(assessment, owner, Assessment.MODE_EXPERT)
         seen_levels = set()
-        for item in assessment.items.order_by("level", "track", "seq"):
+        for item in assessment.items.filter(level__lte=assessment.target_level).order_by("level", "track", "seq"):
             statement, support = STATEMENTS.get((item.level, item.track, item.seq), (DEFAULT_STATEMENT, ""))
             if item.level not in seen_levels:
                 seen_levels.add(item.level)
@@ -367,6 +368,7 @@ class Command(BaseCommand):
             services.evaluate_check_item(
                 item, owner, {"result": CheckItem.RESULT_SATISFIED, "statement": statement, "support_info": support}
             )
+        services.submit_levels(assessment, owner, assessment.target_level)
         return assessment
 
     def _experts(self, *usernames):
@@ -390,7 +392,8 @@ class Command(BaseCommand):
         review_services.save_opinions(assignment, assignment.expert, data, submit=not draft_only)
 
     def _expert_samples(self, admin, gangyan, hexin, zhongnan):
-        # ⑥ 评审中：专家 A 已提交，专家 B 填了一半，专家 C 尚未接受且已逾期
+        """专家评审样例：企业照常提交审核，由管理员决定指派专家评审。"""
+        # ⑥ 专家评审中：专家 A 已提交，专家 B 填了一半，专家 C 尚未接受且已逾期
         p6 = self._create(
             hexin,
             name="SDD 硅漂移探测器",
@@ -401,7 +404,7 @@ class Command(BaseCommand):
         )
         a6 = self._expert_fill(p6, hexin)
         self._team(p6, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["hexin"])
-        r6 = review_services.apply_expert_review(a6, hexin)
+        r6 = review_services.start_expert_review(a6, admin)
         review_services.assign_experts(r6, admin, [u.pk for u in self._experts("expert11", "expert12", "expert13")])
         s1, s2, s3 = r6.assignments.order_by("slot")
         review_services.respond_assignment(s1, s1.expert, True, pledge=True)
@@ -412,7 +415,7 @@ class Command(BaseCommand):
         backdated = timezone.now() - timezone.timedelta(days=9)
         ExpertAssignment.objects.filter(pk=s3.pk).update(assigned_at=backdated, due_at=backdated + timezone.timedelta(days=7))
 
-        # ⑦ 整改中：第 1 轮终审 3 条不通过，整改期 10 天
+        # ⑦ 整改中：第 1 轮终审 3 条不通过，第 1~4 级审核通过，第 5、6 级退回整改（期限 10 天）
         p7 = self._create(
             gangyan,
             name="多流路在线自动进样装置",
@@ -423,9 +426,9 @@ class Command(BaseCommand):
         )
         a7 = self._expert_fill(p7, gangyan)
         self._team(p7, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["gangyan"])
-        r7 = review_services.apply_expert_review(a7, gangyan)
+        r7 = review_services.start_expert_review(a7, admin)
         review_services.assign_experts(r7, admin, [u.pk for u in self._experts("expert01", "expert02", "expert03")])
-        fails7 = ["TRL5-HW-3", "TRL6-HW-2", "TRL7-HW-1"]
+        fails7 = ["TRL5-HW-3", "TRL6-HW-2", "TRL6-HW-4"]
         for index, assignment in enumerate(r7.assignments.order_by("slot")):
             review_services.respond_assignment(assignment, assignment.expert, True, pledge=True)
             # 席位 3 认为 TRL6-HW-2 已满足：形成一条分歧
@@ -442,14 +445,14 @@ class Command(BaseCommand):
                     reason="两位专家判不通过，佐证确有缺口" if code == "TRL6-HW-2" else "",
                     feedback=FAIL_SUGGESTIONS[code],
                 )
-        review_services.finalize_round(r7, admin, "rectify", rectify_days=10, summary="整体研制工作扎实，3 条需补充验证证据后复评。")
+        review_services.finalize_round(r7, admin, rectify_days=10, summary="整体研制工作扎实，3 条需补充验证证据后复评。")
         # 劳务记录：填入样例金额，其中 2 条已结算
         fee_records = list(RemunerationRecord.objects.filter(project=p7).order_by("id"))
         for record in fee_records:
             fees.update_record(record, admin, 800, "样例金额")
         fees.settle_records([record.id for record in fee_records[:2]], admin)
 
-        # ⑧ 评审结束：软件类，第 1 轮全部通过，已出具报告
+        # ⑧ 专家评审全部通过：软件类，第 1~7 级审核通过，已出具报告
         p8 = self._create(
             zhongnan,
             name="光谱数据智能解析软件",
@@ -460,16 +463,29 @@ class Command(BaseCommand):
         )
         a8 = self._expert_fill(p8, zhongnan)
         self._team(p8, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
-        r8 = review_services.apply_expert_review(a8, zhongnan)
+        r8 = review_services.start_expert_review(a8, admin)
         review_services.assign_experts(r8, admin, [u.pk for u in self._experts("expert08", "expert09", "expert10")])
         for assignment in r8.assignments.order_by("slot"):
             review_services.respond_assignment(assignment, assignment.expert, True, pledge=True)
             self._opinions(assignment)
         r8.refresh_from_db()
         review_services.confirm_unanimous(r8, admin)
-        review_services.finalize_round(r8, admin, "close", summary="软件各级条件均有充分佐证，同意通过。")
+        review_services.finalize_round(r8, admin, summary="软件各级条件均有充分佐证，同意通过。")
         self._front_matter(p8)
         approve_request(request_export(p8, Report.TYPE_TRL, zhongnan), admin)
+
+        # ⑨ 展示样例：企业已提交第 1~4 级，等待评价机构决定自行审核还是指派专家评审
+        p9 = self._create(
+            zhongnan,
+            name="便携式稀土元素快速分析仪",
+            domain="稀土湿法冶金 · 现场快速检测",
+            tech_type=EvaluationProject.TECH_HARDWARE,
+            target=4,
+            specialty="instrument",
+        )
+        self._expert_fill(p9, zhongnan)
+        self._team(p9, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
+
         # 生成逾期提醒（专家 C 已逾期）
         check_deadlines()
 

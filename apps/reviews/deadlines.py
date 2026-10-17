@@ -96,7 +96,7 @@ def check_deadlines(now=None):
                     project.owner,
                     "review.rectify_soon",
                     f"{assessment.sys.name}专家评审整改将于 {local_due:%m-%d %H:%M} 到期",
-                    body=f"项目：{project.name}。请在截止前修改未通过的条目并点击“提交整改”。",
+                    body=f"项目：{project.name}。请在截止前修改未通过的条目，并重新提交审核。",
                     link=enterprise_link(assessment),
                     project=project,
                     category=CATEGORY_TODO,

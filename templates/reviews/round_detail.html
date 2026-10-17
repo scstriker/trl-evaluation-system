@@ -158,17 +158,13 @@
     <form method="post" action="{% url 'reviews:finalize' round.id %}" class="card-body form-grid">
       {% csrf_token %}
       {% if stats.fail %}
-      <div class="option-list">
-        <label class="option"><input type="radio" name="decision" value="rectify" checked><span class="t">要求整改</span><span class="d">{{ stats.fail }} 条不通过的条目发给企业整改，企业提交后进入第 {{ round.number|add:1 }} 轮复评</span></label>
-        <label class="option"><input type="radio" name="decision" value="close"><span class="t">结束评审</span><span class="d">不再整改，按“自第 1 级起全部通过的连续级别”确定达成等级</span></label>
-      </div>
+      <p class="mt-0 mb-0">提交后：有不通过条目的级别<strong>退回企业整改</strong>，整改要求显示在对应条目上；自第一个待审级别起全部通过的连续级别审核通过。企业修改后照常提交审核，你可以再请专家复评（只评这 {{ stats.fail }} 条）或自行审核。</p>
       <div class="field" style="max-width:280px">
         <label class="field-label" for="rectify_days">整改期限（天）</label>
         <input class="input" type="number" id="rectify_days" name="rectify_days" min="1" max="90" value="{{ config.rectify_days }}">
       </div>
       {% else %}
-      <input type="hidden" name="decision" value="close">
-      <p class="mt-0 mb-0">全部 {{ stats.total }} 条终审通过，提交后专家评审结束，可以生成评价报告；第三方评价组为空时自动填入本轮专家组。</p>
+      <p class="mt-0 mb-0">全部 {{ stats.total }} 条终审通过，提交后本轮评审的级别审核通过；第三方评价组为空时自动填入本轮专家组。</p>
       {% endif %}
       <div class="field">
         <label class="field-label" for="summary">终审意见总述（企业可见，可选）</label>

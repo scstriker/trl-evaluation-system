@@ -1,7 +1,7 @@
 """专家评审：按轮次留痕。
 
-一轮 = 企业提交（首轮为申报，之后为提交整改）→ 三位专家独立逐条评审 → 管理员终审。
-- 首轮评审范围是全部条目；第 N+1 轮只复评第 N 轮终审为“不通过”的条目。
+一轮 = 管理员对企业已提交的级别指派专家 → 三位专家独立逐条评审 → 管理员终审。
+- 评审范围是已提交级别中尚未通过专家评审的条目，因此复评只针对上一轮终审为“不通过”的条目。
 - 每轮提交时把条目的自评内容和佐证引用存为“提交留档”，之后企业再修改也不影响已留档内容。
 - 改派专家时撤销原分配、新建一条分配；是否逾期按截止时间实时计算，不存成状态。
 """
@@ -33,10 +33,12 @@ class ReviewRound(models.Model):
     OUTCOME_RECTIFIED = "rectified"
     OUTCOME_PASSED = "passed"
     OUTCOME_FAILED = "closed_with_failures"
+    OUTCOME_CANCELLED = "cancelled"
     OUTCOME_CHOICES = [
-        (OUTCOME_RECTIFIED, "已提交整改，转入下一轮"),
-        (OUTCOME_PASSED, "评审结束，全部通过"),
+        (OUTCOME_RECTIFIED, "已按整改要求重新提交"),
+        (OUTCOME_PASSED, "全部通过"),
         (OUTCOME_FAILED, "评审结束，部分条目未通过"),
+        (OUTCOME_CANCELLED, "流程调整，已撤销"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

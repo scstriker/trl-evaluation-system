@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <h1>专家评审</h1>
-      <div class="sub">企业申报专家评审后出现在这里。每轮固定 3 位专家，专家间互不可见；三份意见齐全后由评价机构逐条终审，意见不一致的条目须写裁定理由。</div>
+      <div class="sub">对企业提交的级别指派专家评审后出现在这里。每轮固定 3 位专家，专家间互不可见；三份意见齐全后由评价机构逐条终审，意见不一致的条目须写裁定理由。</div>
     </div>
     <div class="actions"><a class="btn secondary sm" href="{% url 'experts:expert_list' %}">专家库</a></div>
   </div>
@@ -15,7 +15,7 @@
   <div class="kpi-row">
     {% for status, label, rounds in sections %}
     <div class="kpi {% if rounds and status == 'ruling' %}hi{% endif %}"><span class="l">{{ label }}</span><span class="v">{{ rounds|length }}<small>个</small></span>
-      <span class="d">{% if status == 'assigning' %}需要分配专家{% elif status == 'reviewing' %}等待专家提交意见{% elif status == 'ruling' %}意见已齐，等待终审{% elif status == 'rectifying' %}等待企业整改{% else %}可生成报告{% endif %}</span></div>
+      <span class="d">{% if status == 'assigning' %}需要分配专家{% elif status == 'reviewing' %}等待专家提交意见{% elif status == 'ruling' %}意见已齐，等待终审{% elif status == 'rectifying' %}等待企业整改后重新提交{% else %}本轮已结束{% endif %}</span></div>
     {% endfor %}
   </div>
 
@@ -57,7 +57,7 @@
   {% endfor %}
 
   {% if not sections.0.2 and not sections.1.2 and not sections.2.2 and not sections.3.2 and not sections.4.2 %}
-  <div class="card"><div class="empty-state"><div class="big">暂无专家评审</div><p>企业在评价页把评审方式改为“专家评审”，填写全部等级后申报，项目就会出现在这里。</p></div></div>
+  <div class="card"><div class="empty-state"><div class="big">暂无专家评审</div><p>企业提交审核后，在项目评价页的“待审核”面板中点击“指派专家评审”，项目就会出现在这里。</p></div></div>
   {% endif %}
 </div>
 {% endblock %}

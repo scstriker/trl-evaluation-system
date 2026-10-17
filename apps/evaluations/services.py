@@ -35,10 +35,8 @@ STATE_SUBMITTED = LevelReview.STATUS_SUBMITTED
 STATE_RETURNED = LevelReview.STATUS_RETURNED
 STATE_PASSED = LevelReview.STATUS_PASSED
 STATE_OUT_OF_SCOPE = "out_of_scope"
-# 专家评审方式下的附加状态（与 reviews.services 中的常量一致）
+# 已提交的级别交给专家评审期间的状态（与 reviews.services 中的常量一致）
 STATE_EXPERT_REVIEW = "expert_review"
-STATE_RECTIFY = "rectify"
-STATE_NOT_PASSED = "not_passed"
 
 STATE_LABELS = {
     STATE_DRAFT: "填写中",
@@ -48,8 +46,6 @@ STATE_LABELS = {
     STATE_PASSED: "已通过",
     STATE_OUT_OF_SCOPE: "超出目标",
     STATE_EXPERT_REVIEW: "专家评审中",
-    STATE_RECTIFY: "需整改",
-    STATE_NOT_PASSED: "未通过",
 }
 
 
@@ -204,8 +200,7 @@ def _level_counts(assessment):
 
 
 def _review_state(assessment, level, reviews):
-    # 专家评审方式下全部等级都要填写，没有“超出目标”
-    if level > assessment.target_level and not assessment.is_expert_mode:
+    if level > assessment.target_level:
         return STATE_OUT_OF_SCOPE
     review = reviews.get(level)
     return review.status if review else None
@@ -215,11 +210,6 @@ def is_level_editable(assessment, level, reviews=None):
     """企业可编辑：评价进行中、在目标等级内、且该级未提交 / 未通过（被退回的可以改）。"""
     if assessment.status != Assessment.STATUS_IN_PROGRESS:
         return False
-    if assessment.is_expert_mode:
-        from apps.reviews.services import editable_item_ids
-
-        ids = editable_item_ids(assessment)
-        return ids is None or assessment.items.filter(level=level, id__in=ids).exists()
     reviews = get_reviews(assessment) if reviews is None else reviews
     return _review_state(assessment, level, reviews) in (None, STATE_RETURNED)
 
@@ -228,11 +218,9 @@ def get_level_states(assessment, reviews=None, counts=None):
     reviews = get_reviews(assessment) if reviews is None else reviews
     counts = _level_counts(assessment) if counts is None else counts
     empty = {"total": 0, "unevaluated": 0, "satisfied": 0, "not_satisfied": 0, "not_applicable": 0}
-    overrides = {}
-    if assessment.is_expert_mode:
-        from apps.reviews.services import level_overrides
+    from apps.reviews.services import level_overrides
 
-        overrides = level_overrides(assessment)
+    overrides = level_overrides(assessment)
     states = []
     for level in assessment.sys.levels:
         stats = counts.get(level, empty)
@@ -259,11 +247,8 @@ def get_level_states(assessment, reviews=None, counts=None):
 
 
 def get_scope_stats(assessment):
-    """目标等级以内条目的填写进度（列表进度条与 KPI 使用）；专家评审方式统计全部等级。"""
-    items = assessment.items.all()
-    if not assessment.is_expert_mode:
-        items = items.filter(level__lte=assessment.target_level)
-    counts = items.aggregate(
+    """目标等级以内条目的填写进度（列表进度条与 KPI 使用）。"""
+    counts = assessment.items.filter(level__lte=assessment.target_level).aggregate(
         total=Count("id"),
         unevaluated=Count("id", filter=Q(result=CheckItem.RESULT_UNEVALUATED)),
         satisfied=Count("id", filter=Q(result=CheckItem.RESULT_SATISFIED)),
@@ -279,9 +264,8 @@ def get_submit_plan(assessment, reviews=None, counts=None):
     """企业可选的提交范围：从最低的未提交级起，可提交至目标等级内任一未提交级。
 
     每个选项：up_to（提交至第几级）、levels（本次将提交的级别）、ready、missing[(level, 未填条数)]。
-    专家评审方式不逐级提交，返回空列表。
     """
-    if assessment.status != Assessment.STATUS_IN_PROGRESS or assessment.is_expert_mode:
+    if assessment.status != Assessment.STATUS_IN_PROGRESS:
         return []
     reviews = get_reviews(assessment) if reviews is None else reviews
     counts = _level_counts(assessment) if counts is None else counts
@@ -304,7 +288,7 @@ def get_submit_plan(assessment, reviews=None, counts=None):
 
 def get_pass_plan(assessment, reviews=None):
     """管理员可审核通过的级别：必须从“已达成等级 + 1”起、连续且已提交。"""
-    if assessment.status != Assessment.STATUS_IN_PROGRESS or assessment.is_expert_mode:
+    if assessment.status != Assessment.STATUS_IN_PROGRESS:
         return []
     reviews = get_reviews(assessment) if reviews is None else reviews
     level = get_achieved_level(assessment, reviews) + 1
@@ -319,11 +303,7 @@ def get_pass_plan(assessment, reviews=None):
 
 
 def ready_for_report(assessment, reviews=None):
-    """能否出具报告：逐级审核方式须通过至目标等级；专家评审方式须评审结束且至少达成 1 级。"""
-    if assessment.is_expert_mode:
-        from apps.reviews.services import ready_for_report as expert_ready
-
-        return expert_ready(assessment)
+    """能否出具报告：须审核通过至目标等级（自行审核或专家评审终审通过均可）。"""
     return get_achieved_level(assessment, reviews) >= assessment.target_level
 
 
@@ -365,10 +345,11 @@ def next_step(assessment, for_admin):
         return f"目标等级调整待审核：{sys.abbr} {pending_target.from_level} → {sys.abbr} {pending_target.to_level}", "warning"
     if assessment.status == Assessment.STATUS_REPORTED:
         return ("报告已出具" if for_admin else "报告已出具，可下载"), "success"
-    if assessment.is_expert_mode:
-        from apps.reviews.services import next_step as expert_next_step
+    from apps.reviews.services import round_step
 
-        return expert_next_step(assessment, for_admin)
+    step = round_step(assessment, for_admin)
+    if step:
+        return step
     reviews = get_reviews(assessment)
     achieved = get_achieved_level(assessment, reviews)
     if achieved >= assessment.target_level:
@@ -425,13 +406,6 @@ def ensure_item_editable(item, purpose="修改"):
     sys = assessment.sys
     if assessment.status == Assessment.STATUS_REPORTED:
         raise ValidationError(f"{sys.name}评价已出具报告，内容已冻结，不能{purpose}。如需修改请联系评价机构。")
-    if assessment.is_expert_mode:
-        from apps.reviews.services import item_lock_reason
-
-        reason = item_lock_reason(item)
-        if reason:
-            raise ValidationError(reason)
-        return
     if item.level > assessment.target_level:
         raise ValidationError(f"第 {item.level} 级超出目标等级 {sys.abbr} {assessment.target_level}，无需填写。")
     state = _review_state(assessment, item.level, get_reviews(assessment))
@@ -439,6 +413,11 @@ def ensure_item_editable(item, purpose="修改"):
         raise ValidationError(f"第 {item.level} 级已提交审核，等待评价机构审核期间不能{purpose}。")
     if state == STATE_PASSED:
         raise ValidationError(f"第 {item.level} 级已审核通过，内容已冻结，不能{purpose}。")
+    from apps.reviews.services import item_lock_reason
+
+    reason = item_lock_reason(item)
+    if reason:
+        raise ValidationError(reason)
 
 
 @transaction.atomic
@@ -465,16 +444,19 @@ def evaluate_check_item(item, actor, data):
 # ---------------------------------------------------------------------------
 
 
-def _ensure_direct_mode(assessment):
-    if assessment.is_expert_mode:
-        raise ValidationError(f"该{assessment.sys.name}评价采用专家评审方式，请在“专家评审”面板中操作。")
+def _ensure_no_expert_round(assessment):
+    """已提交的级别交给专家评审期间，管理员不能直接通过或退回，须在终审中处理。"""
+    from apps.reviews.services import open_round
+
+    review_round = open_round(assessment)
+    if review_round:
+        raise ValidationError(f"第 {review_round.number} 轮专家评审正在进行，请在“专家评审”中终审后再处理。")
 
 
 @transaction.atomic
 def submit_levels(assessment, actor, up_to):
     if not is_project_owner(actor, assessment.project):
         raise PermissionDenied("只有申报企业可以提交审核。")
-    _ensure_direct_mode(assessment)
     sys = assessment.sys
     if assessment.status != Assessment.STATUS_IN_PROGRESS:
         raise ValidationError(f"{sys.name}评价已出具报告，不能再提交。")
@@ -521,6 +503,9 @@ def submit_levels(assessment, actor, up_to):
         project=project,
         category=CATEGORY_TODO,
     )
+    from apps.reviews.services import on_levels_submitted
+
+    on_levels_submitted(assessment, actor)
     return option["levels"]
 
 
@@ -537,7 +522,7 @@ def _ensure_reviewer(actor):
 @transaction.atomic
 def pass_levels(assessment, actor, up_to):
     _ensure_reviewer(actor)
-    _ensure_direct_mode(assessment)
+    _ensure_no_expert_round(assessment)
     sys = assessment.sys
     try:
         up_to = int(up_to)
@@ -549,7 +534,11 @@ def pass_levels(assessment, actor, up_to):
     levels = [level for level in plan if level <= up_to]
     now = timezone.now()
     LevelReview.objects.filter(assessment=assessment, level__in=levels).update(
-        status=LevelReview.STATUS_PASSED, reviewed_by=actor, reviewed_at=now, comment=""
+        status=LevelReview.STATUS_PASSED,
+        source=LevelReview.SOURCE_DIRECT,
+        reviewed_by=actor,
+        reviewed_at=now,
+        comment="",
     )
     # 逐条审核意见已处理完毕，通过后清空（历史见审计留痕）
     assessment.items.filter(level__in=levels).exclude(review_comment="").update(review_comment="")
@@ -577,7 +566,7 @@ def pass_levels(assessment, actor, up_to):
 @transaction.atomic
 def return_levels(assessment, actor, levels, comment):
     _ensure_reviewer(actor)
-    _ensure_direct_mode(assessment)
+    _ensure_no_expert_round(assessment)
     sys = assessment.sys
     comment = (comment or "").strip()
     if not comment:
@@ -596,7 +585,11 @@ def return_levels(assessment, actor, levels, comment):
         raise ValidationError(f"第 {format_levels(invalid)} 级不是已提交或已通过状态，不能退回。")
     now = timezone.now()
     LevelReview.objects.filter(assessment=assessment, level__in=levels).update(
-        status=LevelReview.STATUS_RETURNED, reviewed_by=actor, reviewed_at=now, comment=comment
+        status=LevelReview.STATUS_RETURNED,
+        source=LevelReview.SOURCE_DIRECT,
+        reviewed_by=actor,
+        reviewed_at=now,
+        comment=comment,
     )
     assessment.save(update_fields=["updated_at"])
     _log(
@@ -624,7 +617,7 @@ def return_levels(assessment, actor, levels, comment):
 def set_review_comment(item, actor, comment):
     _ensure_reviewer(actor)
     assessment = item.assessment
-    _ensure_direct_mode(assessment)
+    _ensure_no_expert_round(assessment)
     state = _review_state(assessment, item.level, get_reviews(assessment))
     if assessment.status != Assessment.STATUS_IN_PROGRESS or state == STATE_PASSED:
         raise ValidationError("该级已审核通过或已出具报告，不能再填写审核意见。")
@@ -869,7 +862,7 @@ def enterprise_delete_blockers(project):
     if LevelReview.objects.filter(assessment__project=project).exists():
         reasons.append("项目已提交过审核")
     if ReviewRound.objects.filter(assessment__project=project).exists():
-        reasons.append("项目已申报专家评审")
+        reasons.append("项目已进入专家评审")
     return reasons
 
 

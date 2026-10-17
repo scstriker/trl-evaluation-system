@@ -19,7 +19,7 @@
   {% with r=entry.round %}
   <div class="card">
     <div class="card-head">
-      <h2>第 {{ r.number }} 轮{% if r.number > 1 %} <span class="small muted" style="font-weight:400">复评上一轮未通过的条目</span>{% endif %}</h2>
+      <h2>第 {{ r.number }} 轮 <span class="small muted" style="font-weight:400">第 {{ r.items.all|levels_of }} 级 · {{ entry.items|length }} 条</span></h2>
       <div class="flex">
         {% if r.status == 'closed' %}<span class="tag {% if r.outcome == 'passed' %}success{% else %}neutral{% endif %}">{{ r.get_outcome_display }}</span>{% else %}<span class="tag info">{% if r.status == 'ruling' and not is_admin %}专家评审中{% else %}{{ r.get_status_display }}{% endif %}</span>{% endif %}
         {% if is_admin %}<a class="btn secondary sm" href="{% url 'reviews:round_detail' r.id %}">评审管理</a>{% endif %}
@@ -30,7 +30,7 @@
         <tbody>
           <tr><th>提交</th><td>{{ r.submitted_by|who }} · {{ r.submitted_at|date:"Y-m-d H:i" }} · {{ entry.items|length }} 条</td></tr>
           {% if r.finalized_at %}<tr><th>终审</th><td>{{ r.finalized_at|date:"Y-m-d H:i" }} · 通过 {{ entry.pass }} 条，不通过 {{ entry.fail }} 条</td></tr>{% endif %}
-          {% if r.rectify_due_at %}<tr><th>整改期限</th><td>{{ r.rectify_due_at|date:"Y-m-d H:i" }}{% if r.rectified_at %} · {{ r.rectified_at|date:"Y-m-d H:i" }} 提交整改{% endif %}</td></tr>{% endif %}
+          {% if r.rectify_due_at %}<tr><th>整改期限</th><td>{{ r.rectify_due_at|date:"Y-m-d H:i" }}{% if r.rectified_at %} · {{ r.rectified_at|date:"Y-m-d H:i" }} 重新提交{% endif %}</td></tr>{% endif %}
           {% if r.feedback_summary %}<tr><th>终审意见</th><td>{{ r.feedback_summary }}</td></tr>{% endif %}
           {% if is_admin %}<tr><th>专家组</th><td>{% for a in entry.assignments %}<span class="tag {% if a.status == 'submitted' %}success{% else %}neutral{% endif %}">席位 {{ a.slot }} · {{ a.expert.expert_profile.name }} · {{ a.get_status_display }}</span> {% endfor %}</td></tr>{% endif %}
         </tbody>

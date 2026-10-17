@@ -80,20 +80,11 @@ class Assessment(models.Model):
         (STATUS_REPORTED, "已出报告"),
     ]
 
-    # 评审方式：管理员逐级审核（原流程）/ 专家评审（全部等级填完后申报，三位专家逐条评审，管理员终审）
-    MODE_DIRECT = "direct"
-    MODE_EXPERT = "expert"
-    MODE_CHOICES = [
-        (MODE_DIRECT, "管理员逐级审核"),
-        (MODE_EXPERT, "专家评审"),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(EvaluationProject, on_delete=models.CASCADE, related_name="assessments")
     system = models.CharField("评价类别", max_length=8, choices=SYSTEM_CHOICES)
     target_level = models.PositiveSmallIntegerField("目标等级")
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_IN_PROGRESS)
-    review_mode = models.CharField("评审方式", max_length=8, choices=MODE_CHOICES, default=MODE_DIRECT)
     summary_text = models.TextField("评价综述", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -116,9 +107,6 @@ class Assessment(models.Model):
     def is_trl(self):
         return self.system == TRL
 
-    @property
-    def is_expert_mode(self):
-        return self.review_mode == self.MODE_EXPERT
 
 
 class CheckItem(models.Model):
@@ -218,7 +206,7 @@ class LevelReview(models.Model):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField("审核意见", blank=True)
-    # 专家评审方式下，管理员终审后按“自第 1 级起全部通过的连续级别”写入，来源记为 expert
+    # 来源：管理员自行审核为 direct；指派专家评审后由终审结果写入的为 expert
     SOURCE_DIRECT = "direct"
     SOURCE_EXPERT = "expert"
     source = models.CharField(max_length=8, default=SOURCE_DIRECT)
