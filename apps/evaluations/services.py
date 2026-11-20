@@ -104,6 +104,8 @@ def create_project(project, owner, targets):
     """保存企业申报的项目，并按所选评价类别生成评价条目。targets: {system: target_level}"""
     if not targets:
         raise ValidationError("请至少选择一项评价内容（技术就绪度或制造成熟度）。")
+    if owner is None or not getattr(owner, "pk", None):
+        raise ValidationError("无法确定申报企业账号，请使用企业用户登录后再申报项目。")
     project.owner = owner
     project.save()
     _log(owner, "project.create", "EvaluationProject", project.id, project.name, project, after={"name": project.name})

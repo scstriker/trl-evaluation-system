@@ -136,12 +136,12 @@ class CheckItem(models.Model):
     level = models.PositiveSmallIntegerField()
     track = models.CharField(max_length=8, choices=TRACK_CHOICES)
     seq = models.PositiveSmallIntegerField()
-    name = models.TextField("具体化等级条件")
-    evidence = models.CharField("评价支撑信息要求", max_length=255)
+    name = models.TextField("审核依据")
+    evidence = models.CharField("评价支撑信息参考", max_length=255)
 
     result = models.CharField("自评结论", max_length=32, choices=RESULT_CHOICES, default=RESULT_UNEVALUATED)
     statement = models.TextField("满足情况说明", blank=True)
-    support_info = models.TextField("评价支撑信息", blank=True)
+    support_info = models.TextField("相关文件", blank=True)
     review_comment = models.TextField("审核意见", blank=True)
 
     evaluated_by = models.ForeignKey(

@@ -26,7 +26,8 @@ from apps.audit.models import AuditLog
 from apps.reports import services
 from apps.reports.pdf import LABELS as PDF_LABELS
 from apps.reports.pdf import detect_converter
-from apps.reports.models import Report, ReportRequest
+from apps.reports import enterprise_docs
+from apps.reports.models import EnterpriseProjectFile, Report, ReportRequest
 
 
 def _errors(exc):
@@ -101,6 +102,17 @@ def report_preview(request, project_id):
             "assessment_tabs": {a.system for a in assessments},
             "pdf_tool": PDF_LABELS.get(detect_converter()) if admin else "",
             "seal_ready": bool(SystemConfig.get().seal_image),
+            "enterprise_doc_rows": [
+                {
+                    "kind": kind,
+                    "label": label,
+                    "upload": uploads.get(kind),
+                }
+                for kind, label in EnterpriseProjectFile.KIND_CHOICES
+                for uploads in [
+                    {f.kind: f for f in project.enterprise_files.select_related("uploaded_by")}
+                ]
+            ],
         },
     )
 
@@ -324,3 +336,41 @@ def make_pdf(request, report_id):
     except (ValidationError, PermissionDenied) as exc:
         messages.error(request, _errors(exc))
     return redirect(_preview_url(report.project_id, report.report_type))
+
+
+@login_required
+def download_enterprise_template(request, kind):
+    if kind not in enterprise_docs.TEMPLATE_FILES:
+        raise Http404()
+    try:
+        path = enterprise_docs.template_path(kind)
+    except ValidationError as exc:
+        raise Http404("；".join(exc.messages)) from exc
+    return FileResponse(path.open("rb"), as_attachment=True, filename=path.name)
+
+
+@login_required
+@require_POST
+def upload_enterprise_file(request, project_id):
+    project = get_visible_project_or_404(request.user, project_id)
+    if not is_project_owner(request.user, project):
+        raise PermissionDenied("仅申报企业可上传。")
+    kind = request.POST.get("kind", "")
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        messages.error(request, "请选择文件。")
+        return redirect(_preview_url(project.id, request.POST.get("type", Report.TYPE_TRL)))
+    try:
+        obj = enterprise_docs.store_upload(project, kind, uploaded, request.user)
+        messages.success(request, f"「{enterprise_docs.KIND_LABELS.get(kind, kind)}」已上传：{obj.original_filename}")
+    except ValidationError as exc:
+        messages.error(request, _errors(exc))
+    return redirect(_preview_url(project.id, request.POST.get("type", Report.TYPE_TRL)))
+
+
+@login_required
+def download_enterprise_file(request, file_id):
+    obj = get_object_or_404(EnterpriseProjectFile.objects.select_related("project"), pk=file_id)
+    if not can_view_project(request.user, obj.project):
+        raise Http404()
+    return FileResponse(obj.file.open("rb"), as_attachment=True, filename=obj.original_filename)

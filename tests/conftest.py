@@ -25,6 +25,13 @@ def rules(db):
 
 
 @pytest.fixture
+def specialty_other(db):
+    from apps.rules.models import Specialty
+
+    return Specialty.objects.get_or_create(code="other", defaults={"name": "其他", "order": 0})[0]
+
+
+@pytest.fixture
 def mrl_rules(rules):
     """仅用于测试的制造成熟度细则（正式细则由评价机构提供后导入）。"""
     for level in range(1, 11):

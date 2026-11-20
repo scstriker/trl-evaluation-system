@@ -16,4 +16,7 @@ urlpatterns = [
     path("<uuid:report_id>/download.pdf", views.download_report_pdf, name="download_report_pdf"),
     path("<uuid:report_id>/make-pdf/", views.make_pdf, name="make_pdf"),
     path("projects/<uuid:project_id>/front-matter/", views.front_matter_edit, name="front_matter"),
+    path("templates/<slug:kind>/", views.download_enterprise_template, name="enterprise_template"),
+    path("projects/<uuid:project_id>/enterprise-upload/", views.upload_enterprise_file, name="enterprise_upload"),
+    path("enterprise-files/<uuid:file_id>/download/", views.download_enterprise_file, name="enterprise_download"),
 ]

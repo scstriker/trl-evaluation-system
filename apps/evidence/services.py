@@ -12,7 +12,35 @@ from apps.audit.models import AuditLog
 from apps.evaluations.services import ensure_item_editable
 from apps.evidence.models import EvidenceFile
 
-ALLOWED_EXTENSIONS = {".doc", ".docx", ".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+ALLOWED_EXTENSIONS = {
+    ".doc",
+    ".docx",
+    ".pdf",
+    ".xls",
+    ".xlsx",
+    ".zip",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif",
+    ".bmp",
+}
+
+_EXTENSION_BY_MIME = {
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+}
 
 
 def _uploaded_file_sha256(uploaded_file):
@@ -23,10 +51,21 @@ def _uploaded_file_sha256(uploaded_file):
     return digest.hexdigest()
 
 
+def _file_extension(uploaded_file):
+    name = (uploaded_file.name or "file").strip()
+    extension = Path(name).suffix.lower()
+    if extension in ALLOWED_EXTENSIONS:
+        return extension
+    mime = (getattr(uploaded_file, "content_type", "") or "").split(";")[0].strip().lower()
+    return _EXTENSION_BY_MIME.get(mime, extension)
+
+
 def _validate_uploaded_file(uploaded_file):
-    extension = Path(uploaded_file.name).suffix.lower()
+    extension = _file_extension(uploaded_file)
     if extension not in ALLOWED_EXTENSIONS:
-        raise ValidationError("文件格式不支持。仅允许 doc、docx、pdf、jpg、jpeg、png、webp。")
+        raise ValidationError(
+            "文件格式不支持。允许：doc、docx、pdf、xls、xlsx、zip、jpg、jpeg、png、webp、gif、bmp。"
+        )
     max_size = settings.MAX_EVIDENCE_FILE_SIZE_MB * 1024 * 1024
     if uploaded_file.size > max_size:
         raise ValidationError(f"文件超过大小限制（{settings.MAX_EVIDENCE_FILE_SIZE_MB}MB）。")

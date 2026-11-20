@@ -69,7 +69,13 @@ def test_mrl_entries_hidden_until_rules_imported(client, enterprise, admin_user)
     assert [t["type"] for t in preview.context["tabs"]] == [Report.TYPE_TRL]
 
     # 未开放时申报只保留技术就绪度（即使不传 include_trl）
-    response = client.post("/projects/new/", {"name": "只做TRL", "tech_type": "hardware", "trl_target": "3"})
+    from apps.rules.models import Specialty
+
+    other = Specialty.objects.get_or_create(code="other", defaults={"name": "其他", "order": 0})[0]
+    response = client.post(
+        "/projects/new/",
+        {"name": "只做TRL", "tech_type": "hardware", "trl_target": "3", "specialty": other.pk},
+    )
     assert response.status_code == 302
     assert enterprise.projects.get(name="只做TRL").assessments.get().system == TRL
 

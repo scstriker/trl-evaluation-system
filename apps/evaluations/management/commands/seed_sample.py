@@ -70,17 +70,17 @@ SELF_TEAMS = {
 
 OVERVIEW_TEXT = (
     "本项目来源于“十五五”智能制造系统和机器人国家科技重大专项，由钢研纳克检测技术股份有限公司牵头，"
-    "针对稀土萃取分离过程成分离线检测时间长、数据获取滞后、工艺参数在线感知不及时等问题，"
+    "针对XT萃取分离过程成分离线检测时间长、数据获取滞后、工艺参数在线感知不及时等问题，"
     "突破网格化采样、多流路全自动样品传送、严苛环境可靠性设计等关键技术，"
     "研制高能量高稳定激发源、高效降噪光路系统和多参量同步采传模块等核心部件，"
     "开发具备多流路状态监控、流路识别与方法切换协同控制、谱图解算和数据交互等功能的一体化软件，"
-    "研制稀土萃取分离过程元素成分在线检测仪表，在稀土、钨钼等湿法冶金场景中完成仪表性能验证。\n"
+    "研制XT萃取分离过程元素成分在线检测仪表，在XT、钨钼等湿法冶金场景中完成仪表性能验证。\n"
     "主要技术指标：激发源电压≥65kV、功率≥65W；SDD 探测器分辨率＜136eV@5.9keV；"
-    "稀土元素检出限≤0.01%，检测重复性 RSD≤1%，在线检测时间≤2min；整机技术就绪度（TRL）≥8 级。"
+    "XT元素检出限≤0.01%，检测重复性 RSD≤1%，在线检测时间≤2min；整机技术就绪度（TRL）≥8 级。"
 )
 
 SUMMARY_TEXT = (
-    "本项目聚焦稀土萃取分离过程元素成分在线检测仪表的国产化研制，围绕取样系统、高稳定性光源、"
+    "本项目聚焦XT萃取分离过程元素成分在线检测仪表的国产化研制，围绕取样系统、高稳定性光源、"
     "高性能光学系统、加密数据互传系统等关键核心部件，统筹推进方案设计、部件研制、软件开发、整机集成与性能验证。"
     "在设计上已有详细的设计方案及实施方案，并形成了相关专利；试制上已形成初样机，满足设计要求且持续优化中；"
     "部分关键部件已通过第三方检测机构验证。"
@@ -88,10 +88,10 @@ SUMMARY_TEXT = (
 
 # 各级“满足情况说明 / 评价支撑信息”样例文本（按 TRL 级别 + 类别 + 序号）
 STATEMENTS = {
-    (1, "hw", 1): ("明确了 X 射线荧光分析系统、数据处理系统和自动控制系统的完整技术链路，核心原理已通过发明专利公开，为硬件研发奠定理论基础。", "发明专利《一种稀土冶炼分离过程质量配分量在线监测仪》"),
-    (1, "hw", 2): ("项目任务书系统界定了仪表的适用环境与检测范围，论文完成原理假设的边界论证，明确技术的适用场景与约束条件。", "《项目任务书》；论文《基于能量色散-X射线荧光光谱方法对轻稀土料液配分含量的在线测定》"),
+    (1, "hw", 1): ("明确了 X 射线荧光分析系统、数据处理系统和自动控制系统的完整技术链路，核心原理已通过发明专利公开，为硬件研发奠定理论基础。", "发明专利《一种XT冶炼分离过程质量配分量在线监测仪》"),
+    (1, "hw", 2): ("项目任务书系统界定了仪表的适用环境与检测范围，论文完成原理假设的边界论证，明确技术的适用场景与约束条件。", "《项目任务书》；论文《基于能量色散-X射线荧光光谱方法对轻XT料液配分含量的在线测定》"),
     (1, "sw", 3): ("项目任务书已完成软件系统全链路技术瓶颈梳理，识别出多流路控制、机器人协同、仪器状态监控、谱数据处理与传输等关键问题。", "《项目任务书》"),
-    (1, "sw", 4): ("基于能量色散 X 射线荧光光谱技术建立了在线测定稀土配分含量的方法，核心算法原理已通过论文公开。", "论文《X射线荧光光谱法在线测定稀土冶炼分离过程中钬铒铥镱》"),
+    (1, "sw", 4): ("基于能量色散 X 射线荧光光谱技术建立了在线测定XT配分含量的方法，核心算法原理已通过论文公开。", "论文《X射线荧光光谱法在线测定XT冶炼分离过程中钬铒铥镱》"),
     (1, "sw", 5): ("明确了核心算法的运行条件与适用范围，通过整体技术路线可行性论证确认软件系统研发的技术可行性。", "《软件可行性报告》《机器人辅助取样系统开发文档》"),
     (2, "hw", 1): ("任务书明确仪表核心性能指标，完成硬件系统初步实施方案编制，梳理核心硬件模块的技术要素与结构特性。", "《项目任务书》《项目实施工作方案》"),
     (2, "hw", 2): ("初步明确硬件系统可实现的核心功能（多点位取样、在线检测、数据传输），确定了定量指标。", "《项目任务书》"),
@@ -105,8 +105,8 @@ STATEMENTS = {
     (3, "hw", 3): ("理论分析了光管、探测器、无线系统与整机的集成方案可行性。", "《系统集成可行性分析文档》"),
     (3, "hw", 4): ("形成覆盖五个课题的项目开发计划，明确里程碑与交付物。", "《项目开发计划》"),
     (3, "hw", 5): ("评估了 X 射线管真空封接、SDD 芯片封装等制造条件与现有制造能力。", "《制造能力评估报告》"),
-    (3, "sw", 6): ("确定软件需求边界：覆盖 17 种稀土元素与 6 种以上混合料液检测。", "《需求边界确认报告》"),
-    (3, "sw", 7): ("完成解谱算法等关键技术验证，软件可对稀土元素谱峰进行识别。", "《软件关键技术验证报告》"),
+    (3, "sw", 6): ("确定软件需求边界：覆盖 17 种XT元素与 6 种以上混合料液检测。", "《需求边界确认报告》"),
+    (3, "sw", 7): ("完成解谱算法等关键技术验证，软件可对XT元素谱峰进行识别。", "《软件关键技术验证报告》"),
     (3, "sw", 8): ("完成一体化软件详细设计。", "《软件详细设计文档》"),
     (4, "hw", 1): ("完成两级管道中继取样系统、X 射线源等关键功能试样开发，形成专利与研究报告并被采纳。", "《关键部件开发文档》；发明专利受理通知书"),
     (4, "hw", 2): ("在实验室环境下完成光管 50kV/50W 工况测试、探测器分辨率 176eV@5.9keV 测试。", "《大功率光管测试报告》《高性能XRF光学系统检测报告》"),
@@ -119,7 +119,7 @@ STATEMENTS = {
     (4, "sw", 9): ("基于原型系统开展全流程功能验证、性能测试与兼容性分析。", "《软件关键技术验证报告》"),
 }
 
-DEFAULT_STATEMENT = "经评价组核查相关佐证材料，该具体化等级条件已满足。"
+DEFAULT_STATEMENT = "经评价组核查相关佐证材料，该审核依据已满足。"
 
 # 专家评审样例中判“不通过”的条目及建议
 FAIL_SUGGESTIONS = {
@@ -193,11 +193,10 @@ class Command(BaseCommand):
         # ① 填写中：已通过 1~3 级，第 4 级部分填写
         p1 = self._create(
             gangyan,
-            name="稀土萃取分离过程元素成分在线检测仪表",
-            domain="稀土湿法冶金 · 在线检测仪表",
+            name="XT萃取分离过程元素成分在线检测仪表",
+            domain="XT湿法冶金 · 在线检测仪表",
             tech_type=EvaluationProject.TECH_EQUIPMENT,
             target=8,
-            specialty="instrument",
         )
         self._fill(p1, gangyan, levels=[1, 2, 3])
         self._submit_and_pass(p1, gangyan, admin, up_to=3)
@@ -207,11 +206,10 @@ class Command(BaseCommand):
         # ② 待审核：第 1~4 级一次提交
         p2 = self._create(
             gangyan,
-            name="稀土萃取过程多流路在线取样系统",
-            domain="稀土湿法冶金 · 取样与预处理",
+            name="XT萃取过程多流路在线取样系统",
+            domain="XT湿法冶金 · 取样与预处理",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=4,
-            specialty="instrument",
         )
         self._fill(p2, gangyan, levels=[1, 2, 3, 4])
         services.submit_levels(p2.get_assessment(TRL), gangyan, 4)
@@ -231,7 +229,6 @@ class Command(BaseCommand):
             domain="X 射线探测器 · 核心器件",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=4,
-            specialty="optics",
         )
         self._fill(p3, hexin, levels=[1, 2, 3, 4])
         self._submit_and_pass(p3, hexin, admin, up_to=4)
@@ -246,7 +243,6 @@ class Command(BaseCommand):
             domain="X 射线源 · 核心部件",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=3,
-            specialty="optics",
         )
         self._fill(p4, hexin, levels=[1, 2, 3])
         assessment = p4.get_assessment(TRL)
@@ -259,11 +255,10 @@ class Command(BaseCommand):
         # ⑤ 已出报告：软件 · 目标 3 级 · 导出申请已通过（V1），企业又申请将目标调高到 4 级（待审核）
         p5 = self._create(
             zhongnan,
-            name="稀土萃取在线检测一体化软件",
+            name="XT萃取在线检测一体化软件",
             domain="工业软件 · 光谱数据解析",
             tech_type=EvaluationProject.TECH_SOFTWARE,
             target=3,
-            specialty="software",
         )
         self._fill(p5, zhongnan, levels=[1, 2, 3])
         self._submit_and_pass(p5, zhongnan, admin, up_to=3)
@@ -291,7 +286,7 @@ class Command(BaseCommand):
         )
 
     # ------------------------------------------------------------------
-    def _create(self, owner, *, name, domain, tech_type, target, specialty=None):
+    def _create(self, owner, *, name, domain, tech_type, target, specialty="other"):
         project = EvaluationProject(
             name=name,
             applicant=owner.enterprise.company_name,
@@ -400,7 +395,6 @@ class Command(BaseCommand):
             domain="X 射线探测器 · 核心器件",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=6,
-            specialty="optics",
         )
         a6 = self._expert_fill(p6, hexin)
         self._team(p6, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["hexin"])
@@ -419,10 +413,9 @@ class Command(BaseCommand):
         p7 = self._create(
             gangyan,
             name="多流路在线自动进样装置",
-            domain="稀土湿法冶金 · 取样与预处理",
+            domain="XT湿法冶金 · 取样与预处理",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=6,
-            specialty="instrument",
         )
         a7 = self._expert_fill(p7, gangyan)
         self._team(p7, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["gangyan"])
@@ -459,7 +452,6 @@ class Command(BaseCommand):
             domain="工业软件 · 光谱数据解析",
             tech_type=EvaluationProject.TECH_SOFTWARE,
             target=7,
-            specialty="software",
         )
         a8 = self._expert_fill(p8, zhongnan)
         self._team(p8, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
@@ -477,11 +469,10 @@ class Command(BaseCommand):
         # ⑨ 展示样例：企业已提交第 1~4 级，等待评价机构决定自行审核还是指派专家评审
         p9 = self._create(
             zhongnan,
-            name="便携式稀土元素快速分析仪",
-            domain="稀土湿法冶金 · 现场快速检测",
+            name="便携式XT元素快速分析仪",
+            domain="XT湿法冶金 · 现场快速检测",
             tech_type=EvaluationProject.TECH_HARDWARE,
             target=4,
-            specialty="instrument",
         )
         self._expert_fill(p9, zhongnan)
         self._team(p9, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
@@ -495,17 +486,17 @@ class Command(BaseCommand):
         front.compiled_by, front.checked_by, front.approved_by = "王工", "李工", "杜工"
         front.standard_version = "《技术就绪度评价标准及细则》（2026 年版）"
         front.s1_1_1 = (
-            "本项目来源于稀土萃取分离过程在线检测仪表研制任务，由中南大学承担配套软件的研发，"
+            "本项目来源于XT萃取分离过程在线检测仪表研制任务，由中南大学承担配套软件的研发，"
             "解决在线光谱数据量大、谱峰重叠严重、人工解析滞后等问题。"
         )
         front.s1_1_2 = "研制具备谱图自动解析、多流路数据管理和检测结果实时上传功能的光谱数据智能解析软件，支撑在线检测仪表连续运行。"
-        front.s1_1_3 = "17 种稀土元素同时解析；单次解析时间≤5 s；解析结果与实验室离线分析偏差≤3%；软件连续运行无故障时间≥720 h。"
+        front.s1_1_3 = "17 种XT元素同时解析；单次解析时间≤5 s；解析结果与实验室离线分析偏差≤3%；软件连续运行无故障时间≥720 h。"
         front.s1_1_4 = "光谱数据智能解析软件 1 套，软件著作权 2 项，测试报告 1 份。"
         front.s1_1_5 = (
             "软件采用“采集—预处理—解析—发布”四层结构，提供谱图预处理、重叠峰解析、元素定量和结果发布功能，"
             "可与在线检测仪表的控制系统通过标准接口交换数据。"
         )
-        front.s1_2_1 = "软件已完成全部功能开发，在实验室和稀土分离企业现场完成联调与试运行。"
+        front.s1_2_1 = "软件已完成全部功能开发，在实验室和XT分离企业现场完成联调与试运行。"
         front.s1_2_2 = "主要技术指标均已达到任务书要求，其中单次解析时间实测 3.2 s。"
         front.s1_2_4 = "完成需求分析、概要设计、详细设计、编码与测试全过程，形成配套开发文档。"
         front.s3_1 = "光谱数据智能解析软件运行于在线检测仪表配套工控机，负责光谱数据的预处理、解析与结果发布。"
@@ -517,7 +508,7 @@ class Command(BaseCommand):
             order=1,
             name="重叠峰解析算法",
             design="基于约束非负最小二乘的重叠峰解析方法，结合元素特征峰库自动识别谱峰。",
-            trial="在 6 类稀土混合料液样本上完成算法试制与参数整定。",
+            trial="在 6 类XT混合料液样本上完成算法试制与参数整定。",
             verification="与实验室离线分析结果比对，偏差均在 3% 以内。",
         )
         ReportModule.objects.create(

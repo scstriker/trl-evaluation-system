@@ -30,8 +30,9 @@ def expert(admin_user):
 
 
 def test_specialties_seeded(db):
-    assert Specialty.objects.count() == 8
+    assert Specialty.objects.count() >= 9
     assert Specialty.objects.filter(name="仪器仪表与检测技术").exists()
+    assert Specialty.objects.filter(code="other", name="其他").exists()
 
 
 def test_create_expert_role_and_notification(admin_user, expert, enterprise):

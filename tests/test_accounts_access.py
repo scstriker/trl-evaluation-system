@@ -179,7 +179,7 @@ def test_pages_render_without_forbidden_wording(client, enterprise, admin_user, 
             assert not found, (user.username, url, found and found.group(0))
 
 
-def test_create_project_via_form(client, enterprise, mrl_rules):
+def test_create_project_via_form(client, enterprise, mrl_rules, specialty_other):
     client.force_login(enterprise)
     response = client.post(
         "/projects/new/",
@@ -191,6 +191,7 @@ def test_create_project_via_form(client, enterprise, mrl_rules):
             "trl_target": "3",
             "include_mrl": "on",
             "mrl_target": "2",
+            "specialty": specialty_other.pk,
             "remark": "",
         },
     )

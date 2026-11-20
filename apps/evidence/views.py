@@ -31,15 +31,29 @@ def upload_evidence(request, item_id):
     if not _owned_item_or_404(request, item):
         messages.error(request, "佐证材料由申报企业上传。")
         return _redirect_to_item(item)
-    uploaded_file = request.FILES.get("file")
-    if not uploaded_file:
+    files = request.FILES.getlist("file")
+    if not files:
+        single = request.FILES.get("file")
+        files = [single] if single else []
+    if not files:
         messages.error(request, "请选择要上传的佐证材料文件。")
         return _redirect_to_item(item)
-    try:
-        evidence = services.upload_evidence_file(item, request.user, uploaded_file, request.POST.get("description", ""))
-        messages.success(request, f"佐证材料「{evidence.original_filename}」上传成功。")
-    except ValidationError as exc:
-        messages.error(request, "；".join(exc.messages))
+    description = request.POST.get("description", "")
+    uploaded_names = []
+    errors = []
+    for uploaded_file in files:
+        try:
+            evidence = services.upload_evidence_file(item, request.user, uploaded_file, description)
+            uploaded_names.append(evidence.original_filename)
+        except ValidationError as exc:
+            errors.extend(exc.messages)
+    if uploaded_names:
+        if len(uploaded_names) == 1:
+            messages.success(request, f"佐证材料「{uploaded_names[0]}」上传成功。")
+        else:
+            messages.success(request, f"已上传 {len(uploaded_names)} 份佐证材料。")
+    if errors:
+        messages.error(request, "；".join(dict.fromkeys(errors)))
     return _redirect_to_item(item)
 
 

@@ -126,6 +126,40 @@ class ReportFrontMatter(models.Model):
         return f"{self.project.name} 报告前置信息"
 
 
+def enterprise_file_path(instance, filename):
+    return f"enterprise/{instance.project_id}/{instance.kind}/{filename}"
+
+
+class EnterpriseProjectFile(models.Model):
+    """企业按模板填写后上传的材料（概况、评价支撑信息、附录 A WBST 等）。"""
+
+    KIND_SUPPORT = "support"
+    KIND_OVERVIEW = "overview"
+    KIND_WBST = "wbst"
+    KIND_CHOICES = [
+        (KIND_SUPPORT, "评价支撑信息"),
+        (KIND_OVERVIEW, "项目概况"),
+        (KIND_WBST, "附录A WBST 表"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey("evaluations.EvaluationProject", on_delete=models.CASCADE, related_name="enterprise_files")
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    file = models.FileField(upload_to=enterprise_file_path)
+    original_filename = models.CharField(max_length=255)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="enterprise_uploads")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["project", "kind"], name="unique_enterprise_file_per_kind"),
+        ]
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.project.name} {self.get_kind_display()}"
+
+
 class ReportModule(models.Model):
     """3.2～3.4 按关键技术 / 模块逐个写设计、试制、验证情况。"""
 

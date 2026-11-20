@@ -711,14 +711,14 @@ def save_opinions(assignment, actor, data, submit=False):
 
 
 def opinion_gaps(assignment):
-    """提交前检查：未给结论的条目、判不通过但没写点评或建议的条目。"""
+    """提交前检查：未给结论的条目、判不通过但没写满足情况评价或支撑材料评价的条目。"""
     opinions = opinions_by_item(assignment)
     missing, unexplained = [], []
     for round_item in task_items(assignment):
         opinion = opinions.get(round_item.id)
         if not opinion or not opinion.verdict:
             missing.append(round_item)
-        elif opinion.verdict == FAIL and not (opinion.comment or opinion.suggestion):
+        elif opinion.verdict == FAIL and not (opinion.comment or opinion.suggestion):  # 支撑材料评价 / 满足情况评价
             unexplained.append(round_item)
     return missing, unexplained
 
@@ -734,7 +734,7 @@ def submit_opinions(assignment, actor):
         raise ValidationError(f"还有 {len(missing)} 条未给出是否通过的结论：{codes}。")
     if unexplained:
         codes = "、".join(ri.check_item.code for ri in unexplained[:8]) + ("……" if len(unexplained) > 8 else "")
-        raise ValidationError(f"判为不通过的条目须填写满足建议或点评：{codes}。")
+        raise ValidationError(f"判为不通过的条目须填写满足情况评价或支撑材料评价：{codes}。")
     review_round = assignment.round
     assessment = review_round.assessment
     project = assessment.project

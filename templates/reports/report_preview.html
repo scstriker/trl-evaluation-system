@@ -106,6 +106,37 @@
   </div>
   {% endif %}
 
+  {% if is_owner or is_admin %}
+  <div class="card no-print" style="margin-bottom:24px">
+    <div class="card-head"><h2>企业材料模板</h2><span class="small muted">先下载模板填写，再上传；概况可含配图，附录 A 须为 WBST 表</span></div>
+    <div class="card-body">
+      {% for row in enterprise_doc_rows %}
+      {% with kind=row.kind label=row.label up=row.upload %}
+      <div class="flex-between" style="align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+        <div>
+          <strong>{{ label }}</strong>
+          {% if up %}<div class="small muted">已上传：{{ up.original_filename }} · {{ up.uploaded_at|date:"Y-m-d H:i" }} · {{ up.uploaded_by|who }}</div>{% else %}<div class="small muted">尚未上传</div>{% endif %}
+        </div>
+        <div class="flex" style="flex-wrap:wrap;gap:8px">
+          <a class="btn ghost sm" href="{% url 'reports:enterprise_template' kind %}">下载模板</a>
+          {% if up %}<a class="btn ghost sm" href="{% url 'reports:enterprise_download' up.id %}">下载已填文件</a>{% endif %}
+          {% if is_owner %}
+          <form method="post" action="{% url 'reports:enterprise_upload' project.id %}" enctype="multipart/form-data" class="flex" style="align-items:center;gap:8px">
+            {% csrf_token %}
+            <input type="hidden" name="type" value="{{ report_type }}">
+            <input type="hidden" name="kind" value="{{ kind }}">
+            <input type="file" name="file" class="input" style="max-width:220px" required>
+            <button class="btn secondary sm" type="submit">上传</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card no-print" style="margin-bottom:24px">
     <div class="card-head"><h2>已出具版本 · {{ report.title }}</h2><span class="small muted">每次生成版本号递增，文件 SHA-256 存档</span></div>
     {% if reports %}

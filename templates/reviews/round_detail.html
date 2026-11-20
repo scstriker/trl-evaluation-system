@@ -82,7 +82,7 @@
   {# ---------- 意见对照与终审 ---------- #}
   <div class="section-title">意见对照与终审</div>
   {% if not submitted %}
-  <div class="card"><div class="empty-state"><div class="big">还没有专家提交意见</div><p>专家提交后，这里按条目并排显示三位专家的结论、满足建议和点评。专家未提交的草稿不显示。</p></div></div>
+  <div class="card"><div class="empty-state"><div class="big">还没有专家提交意见</div><p>专家提交后，这里按条目并排显示三位专家的结论、满足情况评价和支撑材料评价。专家未提交的草稿不显示。</p></div></div>
   {% else %}
   <div class="kpi-row">
     <div class="kpi"><span class="l">评审条目</span><span class="v">{{ stats.total }}<small>条</small></span><span class="d">已提交意见 {{ submitted|length }}/3 位</span></div>
@@ -127,8 +127,8 @@
           {% for cell in row.cells %}
           <td class="small">
             {% if cell and cell.verdict %}<span class="tag {% if cell.verdict == 'pass' %}success{% else %}warning{% endif %}">{{ cell.get_verdict_display }}</span>{% else %}<span class="muted">—</span>{% endif %}
-            {% if cell.suggestion %}<div style="margin-top:4px"><span class="muted">建议：</span>{{ cell.suggestion }}</div>{% endif %}
-            {% if cell.comment %}<div style="margin-top:4px"><span class="muted">点评：</span>{{ cell.comment }}</div>{% endif %}
+            {% if cell.suggestion %}<div style="margin-top:4px"><span class="muted">满足情况评价：</span>{{ cell.suggestion }}</div>{% endif %}
+            {% if cell.comment %}<div style="margin-top:4px"><span class="muted">支撑材料评价：</span>{{ cell.comment }}</div>{% endif %}
           </td>
           {% endfor %}
           <td class="small">
@@ -219,9 +219,9 @@
     <form method="post" action="{% url 'reviews:rule' ri.id %}">
       {% csrf_token %}<input type="hidden" name="show" value="{{ show }}">
       <div class="modal-body form-grid">
-        <div class="level-banner"><div><div class="def" style="font-size:14px">{{ ri.check_item.name }}</div><div class="meta">评价支撑信息要求：{{ ri.check_item.evidence }}</div></div></div>
+        <div class="level-banner"><div><div class="def" style="font-size:14px">{{ ri.check_item.name }}</div><div class="meta">评价支撑信息参考：{{ ri.check_item.evidence }}</div></div></div>
         <div class="small">
-          {% for cell in row.cells %}<div style="margin-bottom:4px">席位 {{ forloop.counter }}：{% if cell.verdict %}<strong>{{ cell.get_verdict_display }}</strong>{% else %}—{% endif %}{% if cell.suggestion %}；建议：{{ cell.suggestion }}{% endif %}{% if cell.comment %}；点评：{{ cell.comment }}{% endif %}</div>{% endfor %}
+          {% for cell in row.cells %}<div style="margin-bottom:4px">席位 {{ forloop.counter }}：{% if cell.verdict %}<strong>{{ cell.get_verdict_display }}</strong>{% else %}—{% endif %}{% if cell.suggestion %}；满足情况评价：{{ cell.suggestion }}{% endif %}{% if cell.comment %}；支撑材料评价：{{ cell.comment }}{% endif %}</div>{% endfor %}
           {% if row.consensus %}<span class="tag neutral">专家一致：{% if row.consensus == 'pass' %}通过{% else %}不通过{% endif %}</span>{% else %}<span class="tag warning">意见不一致，须写裁定理由</span>{% endif %}
         </div>
         <div class="field">
@@ -237,8 +237,8 @@
         </div>
         <div class="field">
           <label class="field-label" for="feedback-{{ ri.id }}">整改要求（判不通过时必填，企业可见）</label>
-          <textarea class="input" id="feedback-{{ ri.id }}" name="feedback" rows="3" placeholder="写明企业需要补充或修改的内容">{{ row.draft }}</textarea>
-          <div class="hint">已预填判“不通过”的专家给出的建议和点评，请整理成整改要求，不要写专家姓名。</div>
+          <textarea class="input" id="feedback-{{ ri.id }}" name="feedback" rows="3" placeholder="写明企业需要补充或修改的内容（须由评价机构审定后下发）">{{ row.draft }}</textarea>
+          <div class="hint">请参考上方专家建议自行编写整改要求；企业不会看到专家原文，不要写专家姓名。</div>
         </div>
       </div>
       <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>取消</button><button class="btn primary" type="submit">保存终审</button></div>

@@ -10,7 +10,7 @@
       <div class="level-banner" style="margin-bottom:20px">
         <div>
           <div class="def" style="font-size:14px">{{ item.name }}</div>
-          <div class="meta">评价支撑信息要求：{{ item.evidence }}</div>
+          <div class="meta">评价支撑信息参考：{{ item.evidence }}</div>
         </div>
       </div>
 
@@ -47,14 +47,14 @@
         <div class="field">
           <label class="field-label" for="statement-{{ item.id }}">满足情况说明 *</label>
           <textarea class="input" id="statement-{{ item.id }}" name="statement" rows="4" required
-            placeholder="结合佐证材料，说明该具体化等级条件的满足情况 / 差距情况 / 不适用理由">{{ item.statement }}</textarea>
+            placeholder="结合佐证材料，说明该审核依据的满足情况 / 差距情况 / 不适用理由">{{ item.statement }}</textarea>
           <div class="hint" data-statement-hint>自评为满足时，请结合佐证材料说明该条件如何被满足。</div>
         </div>
         <div class="field">
-          <label class="field-label" for="support-{{ item.id }}">评价支撑信息（写入报告）</label>
+          <label class="field-label" for="support-{{ item.id }}">相关文件（可选，写入报告）</label>
           <textarea class="input" id="support-{{ item.id }}" name="support_info" rows="2"
-            placeholder="例如：《项目任务书》、发明专利《一种……监测仪》、《软件测试报告》">{{ item.support_info }}</textarea>
-          <div class="hint">留空时，报告将自动引用本条上传的佐证材料文件名</div>
+            placeholder="可简述与本条相关的文件材料；也可只上传下方佐证，不必写固定文件名">{{ item.support_info }}</textarea>
+          <div class="hint">留空时，报告将自动引用本条已上传的佐证文件名</div>
         </div>
         <div class="flex" style="justify-content:flex-end">
           <button class="btn secondary" type="button" data-modal-close>取消</button>
@@ -76,7 +76,7 @@
         </div>
         {% if not admin_can_edit_text %}
         {% if item.statement %}<div class="field"><label class="field-label">满足情况说明</label><p class="mt-0 mb-0 prewrap">{{ item.statement }}</p></div>{% endif %}
-        {% if item.support_info %}<div class="field"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0 prewrap">{{ item.support_info }}</p></div>{% endif %}
+        {% if item.support_info %}<div class="field"><label class="field-label">相关文件</label><p class="mt-0 mb-0 prewrap">{{ item.support_info }}</p></div>{% endif %}
         {% endif %}
       </div>
       {% if admin_can_edit_text %}
@@ -87,7 +87,7 @@
           <textarea class="input" id="a-statement-{{ item.id }}" name="statement" rows="4" {% if item.result != 'unevaluated' %}required{% endif %}>{{ item.statement }}</textarea>
         </div>
         <div class="field">
-          <label class="field-label" for="a-support-{{ item.id }}">评价支撑信息（写入报告）</label>
+          <label class="field-label" for="a-support-{{ item.id }}">相关文件（写入报告）</label>
           <textarea class="input" id="a-support-{{ item.id }}" name="support_info" rows="2">{{ item.support_info }}</textarea>
           <div class="hint">自评结论只能由企业修改。评价机构修改的说明文字企业可见，并记录在下方“填写与审核记录”中。</div>
         </div>
@@ -135,8 +135,8 @@
       <form method="post" action="{% url 'evidence:upload' item.id %}" enctype="multipart/form-data" class="flex" style="margin-top:12px;align-items:flex-end">
         {% csrf_token %}
         <div class="field" style="flex:1;min-width:200px">
-          <label class="field-label" for="file-{{ item.id }}">上传佐证文件（doc / docx / pdf / 图片）</label>
-          <input type="file" id="file-{{ item.id }}" name="file" accept=".doc,.docx,.pdf,.jpg,.jpeg,.png,.webp" required>
+          <label class="field-label" for="file-{{ item.id }}">上传佐证文件（可多选）</label>
+          <input type="file" id="file-{{ item.id }}" name="file" accept=".doc,.docx,.pdf,.xls,.xlsx,.zip,.jpg,.jpeg,.png,.webp,.gif,.bmp" multiple required>
         </div>
         <div class="field" style="flex:1;min-width:160px">
           <label class="field-label" for="desc-{{ item.id }}">材料说明（可选）</label>

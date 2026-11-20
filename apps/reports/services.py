@@ -257,14 +257,14 @@ def _analysis_blocks(project, part, chapter):
             {"kind": "caption", "text": f"表 {chapter}-{section['level']} {sys.name}等级结论的分析说明（{section['level']} 级）{passed}"}
         )
         if part["has_general"]:
-            headers = ["序号", "是否满足", "具体化等级条件", "满足情况说明", "评价支撑信息"]
+            headers = ["序号", "是否满足", "审核依据", "满足情况说明", "评价支撑信息"]
             rows = [
                 [item.seq, RESULT_LABELS[item.result], item.name, item.statement, _support_text(item)]
                 for item in section["items"]
             ]
             widths = [1.0, 1.5, 5.0, 5.5, 3.0]
         else:
-            headers = ["序号", "适用", "是否满足", "具体化等级条件", "满足情况说明", "评价支撑信息"]
+            headers = ["序号", "适用", "是否满足", "审核依据", "满足情况说明", "评价支撑信息"]
             rows = [
                 [item.seq, item.get_track_display(), RESULT_LABELS[item.result], item.name, item.statement, _support_text(item)]
                 for item in section["items"]
@@ -444,20 +444,30 @@ def _tail_blocks(project, report_type, parts, evidence_files, start=4):
         blocks.append({"kind": "p", "text": text})
     blocks.append({"kind": "p", "text": f"综上所述，“{project.name}”的{_levels_text(parts)}。", "strong": True})
 
-    # 附录A
-    blocks += [
-        {"kind": "h1", "text": "附录A 评价支撑信息清单"},
+    from apps.reports.models import EnterpriseProjectFile
+
+    wbst = project.enterprise_files.filter(kind=EnterpriseProjectFile.KIND_WBST).first()
+    appendix_title = "附录A WBST 评价支撑信息表" if wbst else "附录A 评价支撑信息清单"
+    blocks.append({"kind": "h1", "text": appendix_title})
+    if wbst:
+        blocks.append(
+            {
+                "kind": "p",
+                "text": f"企业已上传 WBST 表文件「{wbst.original_filename}」（与报告一并归档，见系统下载）。",
+            }
+        )
+    blocks.append(
         {
             "kind": "table",
-            "headers": ["编号", "评价支撑信息（佐证材料）", "关联细则", "SHA-256（前 16 位）"],
+            "headers": ["编号", "相关文件（佐证材料）", "关联细则", "SHA-256（前 16 位）"],
             "rows": [
                 [index, e.original_filename, e.check_item.code, e.sha256[:16]]
                 for index, e in enumerate(evidence_files, start=1)
             ]
             or [["—", "（无佐证材料）", "—", "—"]],
             "widths": [1.2, 8.3, 2.8, 3.7],
-        },
-    ]
+        }
+    )
     return blocks
 
 

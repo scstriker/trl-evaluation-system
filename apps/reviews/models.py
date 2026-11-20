@@ -187,8 +187,8 @@ class ExpertOpinion(models.Model):
     assignment = models.ForeignKey(ExpertAssignment, on_delete=models.CASCADE, related_name="opinions")
     round_item = models.ForeignKey(RoundItem, on_delete=models.CASCADE, related_name="opinions")
     verdict = models.CharField("是否通过", max_length=8, choices=VERDICT_CHOICES, blank=True)
-    suggestion = models.TextField("满足建议", blank=True)
-    comment = models.TextField("点评", blank=True)
+    suggestion = models.TextField("满足情况评价", blank=True)
+    comment = models.TextField("支撑材料评价", blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

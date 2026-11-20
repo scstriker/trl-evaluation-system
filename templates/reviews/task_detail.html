@@ -19,7 +19,7 @@
   {% else %}
   <div class="alert info">
     已给出结论 <strong>{{ filled }}/{{ total }}</strong> 条，截止 {{ assignment.due_at|date:"Y-m-d H:i" }}{% if assignment.is_overdue %} <span class="tag warning">已逾期 {{ assignment.overdue_days }} 天</span>{% endif %}。
-    按级填写并保存，全部填完后点击“提交评审意见”。判为不通过的条目，请写明满足建议或点评，评价机构据此形成整改要求。
+    按级填写并保存，全部填完后点击“提交评审意见”。判为不通过的条目，请写明满足情况评价或支撑材料评价，评价机构据此形成整改要求。
     <div class="flex" style="margin-top:10px"><button class="btn primary sm" type="button" data-modal-open="submit-modal" {% if missing or unexplained %}title="还有条目未填写完整，可打开查看"{% endif %}>提交评审意见…</button></div>
   </div>
   {% endif %}
@@ -43,12 +43,12 @@
       </div>
       <div class="card-body review-item-body">
         <div class="review-col">
-          <div class="field"><label class="field-label">具体化等级条件</label><p class="mt-0 mb-0">{{ item.name }}</p><div class="hint">评价支撑信息要求：{{ item.evidence }}</div></div>
+          <div class="field"><label class="field-label">审核依据</label><p class="mt-0 mb-0">{{ item.name }}</p><div class="hint">评价支撑信息参考：{{ item.evidence }}</div></div>
           <div class="field" style="margin-top:12px"><label class="field-label">企业自评</label>
             {% if ri.snap_result == 'satisfied' %}<span class="tag success">满足</span>{% elif ri.snap_result == 'not_satisfied' %}<span class="tag warning">不满足</span>{% elif ri.snap_result == 'not_applicable' %}<span class="tag neutral">不适用</span>{% else %}<span class="tag outline">未填写</span>{% endif %}
             {% if ri.snap_statement %}<p class="prewrap" style="margin:8px 0 0">{{ ri.snap_statement }}</p>{% endif %}
           </div>
-          {% if ri.snap_support_info %}<div class="field" style="margin-top:12px"><label class="field-label">评价支撑信息</label><p class="mt-0 mb-0 prewrap">{{ ri.snap_support_info }}</p></div>{% endif %}
+          {% if ri.snap_support_info %}<div class="field" style="margin-top:12px"><label class="field-label">相关文件</label><p class="mt-0 mb-0 prewrap">{{ ri.snap_support_info }}</p></div>{% endif %}
           <div class="field" style="margin-top:12px"><label class="field-label">佐证材料（{{ ri.evidence|length }}）</label>
             <div class="evd-list">
               {% for e in ri.evidence %}
@@ -71,22 +71,22 @@
           <div class="field">
             <label class="field-label">是否通过 *</label>
             <div class="choice-grid" style="grid-template-columns:1fr 1fr">
-              <label class="choice-card"><input type="radio" name="verdict-{{ ri.id }}" value="pass" {% if ri.opinion.verdict == 'pass' %}checked{% endif %}><span class="t" style="color:var(--success)">通过</span><span class="d">满足该具体化等级条件</span></label>
+              <label class="choice-card"><input type="radio" name="verdict-{{ ri.id }}" value="pass" {% if ri.opinion.verdict == 'pass' %}checked{% endif %}><span class="t" style="color:var(--success)">通过</span><span class="d">满足该审核依据</span></label>
               <label class="choice-card"><input type="radio" name="verdict-{{ ri.id }}" value="fail" {% if ri.opinion.verdict == 'fail' %}checked{% endif %}><span class="t" style="color:var(--warning)">不通过</span><span class="d">尚不满足，需整改</span></label>
             </div>
           </div>
           <div class="field" style="margin-top:12px">
-            <label class="field-label" for="sg-{{ ri.id }}">满足建议</label>
+            <label class="field-label" for="sg-{{ ri.id }}">满足情况评价</label>
             <textarea class="input" id="sg-{{ ri.id }}" name="suggestion-{{ ri.id }}" rows="2" placeholder="还需要补充什么材料或开展什么工作">{{ ri.opinion.suggestion }}</textarea>
           </div>
           <div class="field" style="margin-top:12px">
-            <label class="field-label" for="cm-{{ ri.id }}">点评</label>
+            <label class="field-label" for="cm-{{ ri.id }}">支撑材料评价</label>
             <textarea class="input" id="cm-{{ ri.id }}" name="comment-{{ ri.id }}" rows="2" placeholder="对企业自评与佐证材料的评价">{{ ri.opinion.comment }}</textarea>
           </div>
           {% else %}
           <div class="field"><label class="field-label">我的结论</label>{% if ri.opinion.verdict %}<span class="tag {% if ri.opinion.verdict == 'pass' %}success{% else %}warning{% endif %}">{{ ri.opinion.get_verdict_display }}</span>{% else %}—{% endif %}</div>
-          {% if ri.opinion.suggestion %}<div class="field" style="margin-top:12px"><label class="field-label">满足建议</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.suggestion }}</p></div>{% endif %}
-          {% if ri.opinion.comment %}<div class="field" style="margin-top:12px"><label class="field-label">点评</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.comment }}</p></div>{% endif %}
+          {% if ri.opinion.suggestion %}<div class="field" style="margin-top:12px"><label class="field-label">满足情况评价</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.suggestion }}</p></div>{% endif %}
+          {% if ri.opinion.comment %}<div class="field" style="margin-top:12px"><label class="field-label">支撑材料评价</label><p class="mt-0 mb-0 prewrap">{{ ri.opinion.comment }}</p></div>{% endif %}
           {% endif %}
         </div>
       </div>
@@ -117,7 +117,7 @@
         <div class="alert warning">
           <strong>还不能提交：</strong>
           {% if missing %}<div style="margin-top:6px">未给出结论 {{ missing|length }} 条：{% for ri in missing|slice:":20" %}<a class="code-link" href="?level={{ ri.check_item.level }}#ri-{{ ri.id }}">{{ ri.check_item.code }}</a>{% endfor %}</div>{% endif %}
-          {% if unexplained %}<div style="margin-top:6px">判为不通过但未写建议或点评：{% for ri in unexplained %}<a class="code-link" href="?level={{ ri.check_item.level }}#ri-{{ ri.id }}">{{ ri.check_item.code }}</a>{% endfor %}</div>{% endif %}
+          {% if unexplained %}<div style="margin-top:6px">判为不通过但未写满足情况评价或支撑材料评价：{% for ri in unexplained %}<a class="code-link" href="?level={{ ri.check_item.level }}#ri-{{ ri.id }}">{{ ri.check_item.code }}</a>{% endfor %}</div>{% endif %}
           <div class="small" style="margin-top:6px">请先保存当前页面的修改，再检查上面的条目。</div>
         </div>
         {% else %}

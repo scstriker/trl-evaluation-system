@@ -66,7 +66,7 @@ def opine(assignment, fail_codes=(), extra=""):
         data[ri.id] = {
             "verdict": "fail" if fail else "pass",
             "suggestion": f"{MARK}{extra}建议补充" if fail else "",
-            "comment": f"{MARK}{extra}点评",
+            "comment": f"{MARK}{extra}支撑材料评价",
         }
     services.save_opinions(assignment, assignment.expert, data, submit=True)
 
@@ -213,7 +213,7 @@ def test_opinions_submit_and_remuneration(enterprise, admin_user, experts):
     data = {ri.id: {"verdict": "pass"} for ri in services.task_items(a1)}
     data[first.id] = {"verdict": "fail"}
     services.save_opinions(a1, experts[0], data)
-    with pytest.raises(ValidationError, match="满足建议或点评"):
+    with pytest.raises(ValidationError, match="满足情况评价或支撑材料评价"):
         services.submit_opinions(a1, experts[0])
     opine(a1, fail_codes=[first.check_item.code])
     a1.refresh_from_db()

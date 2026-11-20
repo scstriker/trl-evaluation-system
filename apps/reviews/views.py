@@ -134,12 +134,8 @@ def round_detail(request, round_id):
     show = request.GET.get("show", "")
     submitted, rows = services.opinion_matrix(review_round)
     for row in rows:
-        # 整改要求草稿：取判“不通过”专家的建议与点评，管理员整理后发给企业
-        texts = []
-        for cell in row["cells"]:
-            if cell and cell.verdict == RoundItem.RESULT_FAIL:
-                texts += [t for t in (cell.suggestion, cell.comment) if t and t not in texts]
-        row["draft"] = row["item"].feedback or "\n".join(texts)
+        # 整改要求仅由管理员编写；专家建议仅在上表供参考，不自动写入企业可见内容
+        row["draft"] = row["item"].feedback or ""
     stats = {
         "total": len(rows),
         "split": sum(1 for r in rows if r["split"]),
@@ -192,10 +188,10 @@ def round_detail(request, round_id):
 def _expert_choices(request, review_round):
     project = review_round.assessment.project
     code = request.GET.get("specialty")
-    if code is None:
-        specialty = project.specialty
-    else:
+    if code:
         specialty = Specialty.objects.filter(code=code).first()
+    else:
+        specialty = None
     q = request.GET.get("q", "").strip()
     experts = services.eligible_experts(review_round, specialty, q)
     loads = services.expert_loads(experts)

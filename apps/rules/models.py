@@ -37,8 +37,8 @@ class RuleItem(models.Model):
     level = models.PositiveSmallIntegerField()
     track = models.CharField(max_length=8, choices=TRACK_CHOICES)
     seq = models.PositiveSmallIntegerField()
-    name = models.TextField(help_text="具体化等级条件")
-    evidence = models.CharField(max_length=255, help_text="评价支撑信息（佐证材料类型）")
+    name = models.TextField(help_text="审核依据")
+    evidence = models.CharField(max_length=255, help_text="评价支撑信息参考（佐证材料类型）")
 
     class Meta:
         constraints = [
