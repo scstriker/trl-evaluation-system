@@ -937,7 +937,11 @@ def restore_project(project, actor):
 
 def project_media_dirs(project):
     root = Path(settings.MEDIA_ROOT)
-    return [root / "evidence" / str(project.id), root / "reports" / str(project.id)]
+    return [
+        root / "evidence" / str(project.id),
+        root / "reports" / str(project.id),
+        root / "enterprise" / str(project.id),
+    ]
 
 
 @transaction.atomic

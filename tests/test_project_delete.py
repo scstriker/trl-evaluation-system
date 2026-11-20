@@ -13,8 +13,9 @@ from apps.evaluations import services
 from apps.evaluations.models import CheckItem, EvaluationProject
 from apps.evidence.services import upload_evidence_file
 from apps.notifications.models import Notification
+from apps.reports import enterprise_docs
 from apps.reports.services import generate_report
-from apps.reports.models import Report
+from apps.reports.models import EnterpriseProjectFile, Report
 from apps.rules.systems import TRL
 from tests.test_core_flow import fill, make_project
 from tests.test_round2 import _ready_project
@@ -128,8 +129,20 @@ def test_purge_removes_records_and_files_but_keeps_audit(enterprise, admin_user)
     project = _ready_project(enterprise, admin_user)
     item = project.get_assessment(TRL).items.first()
     report = generate_report(project, Report.TYPE_TRL, admin_user)
+    enterprise_docs.store_upload(
+        project,
+        EnterpriseProjectFile.KIND_WBST,
+        SimpleUploadedFile(
+            "wbst.docx",
+            b"PK wbst",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        enterprise,
+    )
     report_dir = Path(settings.MEDIA_ROOT) / "reports" / str(project.id)
+    enterprise_dir = Path(settings.MEDIA_ROOT) / "enterprise" / str(project.id)
     assert report_dir.exists()
+    assert enterprise_dir.exists()
     with pytest.raises(ValidationError):
         services.purge_project(project, admin_user)
     services.delete_project(project, admin_user, "测试")
@@ -143,6 +156,7 @@ def test_purge_removes_records_and_files_but_keeps_audit(enterprise, admin_user)
     assert not CheckItem.objects.filter(pk=item.pk).exists()
     assert not Report.objects.filter(pk=report.pk).exists()
     assert not report_dir.exists()
+    assert not enterprise_dir.exists()
     logs = AuditLog.objects.filter(project_name=project.name)
     assert logs.filter(action="project.purge").exists()
     assert logs.filter(action="project.create").exists()

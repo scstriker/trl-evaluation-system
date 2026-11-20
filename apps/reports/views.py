@@ -60,7 +60,9 @@ def report_preview(request, project_id):
         report_type = _default_type(availability, enabled)
     report = services.build_report(project, report_type)
     tabs = [{"type": key, "label": label, **availability[key]} for key, label in Report.TYPE_CHOICES if key in enabled]
-    reports = project.reports.filter(report_type=report_type).select_related("generated_by__enterprise")
+    reports = project.reports.filter(report_type=report_type).select_related(
+        "generated_by__enterprise", "wbst_file"
+    )
     pending_request = services.get_pending_request(project, report_type)
     last_request = services.get_last_request(project, report_type)
 
@@ -106,12 +108,9 @@ def report_preview(request, project_id):
                 {
                     "kind": kind,
                     "label": label,
-                    "upload": uploads.get(kind),
+                    "upload": enterprise_docs.latest_enterprise_files_by_kind(project).get(kind),
                 }
                 for kind, label in EnterpriseProjectFile.KIND_CHOICES
-                for uploads in [
-                    {f.kind: f for f in project.enterprise_files.select_related("uploaded_by")}
-                ]
             ],
         },
     )
@@ -217,6 +216,23 @@ def download_report(request, report_id):
     if not can_view_project(request.user, report.project):
         raise Http404("报告不存在。")
     return FileResponse(report.file.open("rb"), as_attachment=True, filename=report.filename)
+
+
+@login_required
+def download_report_wbst(request, report_id):
+    report = get_object_or_404(
+        Report.objects.select_related("project", "wbst_file"),
+        pk=report_id,
+    )
+    if not can_view_project(request.user, report.project):
+        raise Http404("报告不存在。")
+    if not report.wbst_file or not report.wbst_file.file:
+        raise Http404("该版本未归档 WBST 文件。")
+    return FileResponse(
+        report.wbst_file.file.open("rb"),
+        as_attachment=True,
+        filename=report.wbst_file.original_filename,
+    )
 
 
 @login_required

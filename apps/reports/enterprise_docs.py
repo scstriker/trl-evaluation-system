@@ -5,6 +5,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from django.utils.text import get_valid_filename
 
 from apps.evidence.services import ALLOWED_EXTENSIONS, _file_extension, _validate_uploaded_file
@@ -38,6 +39,25 @@ def validate_enterprise_upload(uploaded_file: UploadedFile):
     _validate_uploaded_file(uploaded_file)
 
 
+def current_enterprise_file(project, kind):
+    from apps.reports.models import EnterpriseProjectFile
+
+    return (
+        EnterpriseProjectFile.objects.filter(project=project, kind=kind)
+        .order_by("-uploaded_at")
+        .first()
+    )
+
+
+def latest_enterprise_files_by_kind(project):
+    """每种 kind 取最新一条上传（允许多版本并存）。"""
+    latest = {}
+    for row in project.enterprise_files.order_by("-uploaded_at"):
+        latest.setdefault(row.kind, row)
+    return latest
+
+
+@transaction.atomic
 def store_upload(project, kind, uploaded_file, actor):
     from apps.reports.models import EnterpriseProjectFile
 
@@ -49,13 +69,11 @@ def store_upload(project, kind, uploaded_file, actor):
         raise ValidationError("文件格式不支持。")
     original = (uploaded_file.name or "file").strip()
     stored_name = get_valid_filename(original)
-    obj, _created = EnterpriseProjectFile.objects.update_or_create(
+    obj = EnterpriseProjectFile(
         project=project,
         kind=kind,
-        defaults={
-            "original_filename": original,
-            "uploaded_by": actor,
-        },
+        original_filename=original,
+        uploaded_by=actor,
     )
     obj.file.save(stored_name, uploaded_file, save=True)
     return obj

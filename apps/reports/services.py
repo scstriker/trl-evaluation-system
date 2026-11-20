@@ -152,7 +152,7 @@ def report_availability(project):
     return result
 
 
-def build_report(project, report_type):
+def build_report(project, report_type, wbst=None):
     systems = TYPE_SYSTEMS[report_type]
     assessments = {a.system: a for a in project.assessments.all()}
     parts = [_assessment_part(assessments[system]) for system in systems if system in assessments]
@@ -167,7 +167,12 @@ def build_report(project, report_type):
     title = TYPE_TITLES[report_type]
     front = front_context(project, report_type, parts, team)
     head = front_blocks(front)
-    tail = _tail_blocks(project, report_type, parts, evidence_files, start=4)
+    if wbst is None:
+        from apps.reports.enterprise_docs import current_enterprise_file
+        from apps.reports.models import EnterpriseProjectFile
+
+        wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
+    tail = _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=wbst)
     return {
         "project": project,
         "report_type": report_type,
@@ -404,7 +409,7 @@ def front_blocks(front):
     return blocks
 
 
-def _tail_blocks(project, report_type, parts, evidence_files, start=4):
+def _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=None):
     """系统生成的章节：评价准则、各类评价的等级分析、总结、附录。"""
     combined = report_type == Report.TYPE_COMBINED
     blocks = []
@@ -444,9 +449,6 @@ def _tail_blocks(project, report_type, parts, evidence_files, start=4):
         blocks.append({"kind": "p", "text": text})
     blocks.append({"kind": "p", "text": f"综上所述，“{project.name}”的{_levels_text(parts)}。", "strong": True})
 
-    from apps.reports.models import EnterpriseProjectFile
-
-    wbst = project.enterprise_files.filter(kind=EnterpriseProjectFile.KIND_WBST).first()
     appendix_title = "附录A WBST 评价支撑信息表" if wbst else "附录A 评价支撑信息清单"
     blocks.append({"kind": "h1", "text": appendix_title})
     if wbst:
@@ -552,17 +554,23 @@ def _make_pdf(docx_bytes):
 def generate_report(project, report_type, actor):
     """生成新版本报告。Word 排版与 PDF 转换在数据库事务之外完成，避免长时间占用写锁。"""
     validate_can_generate(project, report_type, actor)
-    report = build_report(project, report_type)
+    from apps.reports.enterprise_docs import current_enterprise_file
+    from apps.reports.models import EnterpriseProjectFile
+
+    wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
+    report = build_report(project, report_type, wbst=wbst)
     now = timezone.localtime()
     max_version = project.reports.filter(report_type=report_type).aggregate(v=Max("version"))["v"] or 0
     version = max_version + 1
     report_no = f"{base_report_no(project, now)}-{TYPE_SUFFIX[report_type]}"
     payload, pdf_bytes, converter = _make_pdf(docx_render.render(report, report_no))
     with transaction.atomic():
-        return _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter)
+        return _store_report(
+            project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter, wbst=wbst
+        )
 
 
-def _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter):
+def _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter, wbst=None):
     sha256 = hashlib.sha256(payload).hexdigest()
     filename = f"{report['title']}_{project.name}_V{version}.docx"
     levels = {part["sys"].code: part["achieved"] for part in report["parts"]}
@@ -577,6 +585,7 @@ def _store_report(project, report_type, actor, report, now, version, report_no, 
         trl_level=levels.get(TRL),
         mrl_level=levels.get(MRL),
         generated_by=actor,
+        wbst_file=wbst,
     )
     record.file.save(filename, ContentFile(payload), save=False)
     if pdf_bytes:

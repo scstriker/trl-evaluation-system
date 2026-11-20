@@ -155,6 +155,7 @@
             <td class="mono small" style="word-break:break-all">{{ r.sha256|slice:":16" }}…{% if r.pdf_sha256 %}<br>{{ r.pdf_sha256|slice:":16" }}…{% endif %}</td>
             <td class="nowrap">
               <a class="btn secondary sm" href="{% url 'reports:download_report' r.id %}">Word</a>
+              {% if r.wbst_file %}<a class="btn secondary sm" href="{% url 'reports:download_report_wbst' r.id %}">WBST</a>{% endif %}
               {% if r.pdf_file %}<a class="btn secondary sm" href="{% url 'reports:download_report_pdf' r.id %}">PDF</a>
               {% elif is_admin and pdf_tool %}<form method="post" action="{% url 'reports:make_pdf' r.id %}" style="display:inline">{% csrf_token %}<button class="btn ghost sm" type="submit">生成 PDF</button></form>
               {% else %}<span class="small muted" title="本机未检测到 Word 或 LibreOffice">无 PDF</span>{% endif %}

@@ -36,6 +36,14 @@ class Report(models.Model):
     pdf_filename = models.CharField(max_length=255, blank=True)
     pdf_sha256 = models.CharField(max_length=64, blank=True)
     pdf_converter = models.CharField(max_length=16, blank=True)
+    wbst_file = models.ForeignKey(
+        "reports.EnterpriseProjectFile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bound_reports",
+        verbose_name="归档 WBST",
+    )
 
     class Meta:
         constraints = [
@@ -151,9 +159,6 @@ class EnterpriseProjectFile(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["project", "kind"], name="unique_enterprise_file_per_kind"),
-        ]
         ordering = ["-uploaded_at"]
 
     def __str__(self):
