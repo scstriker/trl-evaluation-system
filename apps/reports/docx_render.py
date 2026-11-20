@@ -8,8 +8,12 @@
 """
 
 import copy
+import logging
+import sys
 from io import BytesIO
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from docx import Document
@@ -18,6 +22,8 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.shared import Cm, Mm, Pt
 from docxtpl import DocxTemplate
+
+from apps.reports import docx_merge
 
 TEMPLATE_PATH = Path(settings.BASE_DIR) / "data" / "templates" / "report" / "report_template.docx"
 SEAL_MARK = "〔印章位置〕"
@@ -233,12 +239,80 @@ def clear_update_fields(docx_bytes):
     return buffer.getvalue()
 
 
-def render(report, report_no):
+def _read_enterprise_file(obj):
+    if not obj or not obj.file:
+        return None
+    obj.file.open("rb")
+    try:
+        return obj.file.read()
+    finally:
+        obj.file.close()
+
+
+def render(report, report_no, enterprise_files=None):
+    enterprise_files = enterprise_files or {}
+    overview = enterprise_files.get("overview")
+    wbst = enterprise_files.get("wbst")
+    support = enterprise_files.get("support")
+    merge_mode = bool(overview)
+
     template = DocxTemplate(str(TEMPLATE_PATH))
     template.render(template_context(report["front"], report_no), autoescape=True)
     document = template.docx
     _place_seal(document)
+
+    buffer = BytesIO()
+    if merge_mode:
+        overview_bytes = _read_enterprise_file(overview)
+        docx_merge.trim_template_front_matter(document)
+        document.save(buffer)
+        shell_bytes = buffer.getvalue()
+        header_line = f"{report['front']['project_name']}{report['front']['header_suffix']}"
+        if overview_bytes:
+            if sys.platform == "win32":
+                try:
+                    shell_bytes = docx_merge.merge_overview_com(shell_bytes, overview_bytes)
+                    shell_bytes = docx_merge.fix_body_section_headers(shell_bytes, header_line)
+                except Exception as exc:
+                    logger.warning("Word 合并概况失败，回退 python-docx：%s", exc)
+                    document = Document(BytesIO(shell_bytes))
+                    docx_merge.append_docx_bytes(document, overview_bytes)
+                    buffer = BytesIO()
+                    document.save(buffer)
+                    shell_bytes = docx_merge.fix_body_section_headers(buffer.getvalue(), header_line)
+            else:
+                document = Document(BytesIO(shell_bytes))
+                docx_merge.append_docx_bytes(document, overview_bytes)
+                buffer = BytesIO()
+                document.save(buffer)
+                shell_bytes = docx_merge.fix_body_section_headers(buffer.getvalue(), header_line)
+        document = Document(BytesIO(shell_bytes))
     append_blocks(document, report["tail_blocks"])
+
+    buffer = BytesIO()
+    document.save(buffer)
+    payload = buffer.getvalue()
+
+    trailer = report.get("appendix_trailer_blocks") or []
+    if merge_mode:
+        wbst_bytes = _read_enterprise_file(wbst)
+        support_bytes = _read_enterprise_file(support)
+        payload = docx_merge.append_appendices_only(payload, wbst_bytes, support_bytes)
+        if trailer:
+            document = Document(BytesIO(payload))
+            append_blocks(document, trailer)
+            buffer = BytesIO()
+            document.save(buffer)
+            payload = buffer.getvalue()
+    else:
+        if trailer:
+            document = Document(BytesIO(payload))
+            append_blocks(document, trailer)
+            buffer = BytesIO()
+            document.save(buffer)
+            payload = buffer.getvalue()
+
+    document = Document(BytesIO(payload))
     _update_fields_on_open(document)
     buffer = BytesIO()
     document.save(buffer)

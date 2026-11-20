@@ -106,12 +106,14 @@ def test_batch_evidence_upload(client, enterprise, rules):
 
 
 def test_report_wbst_bound_to_version(client, enterprise, admin_user):
+    from tests.report_enterprise_fixtures import minimal_docx
+
     project = _ready_project(enterprise, admin_user)
     assessment = project.get_assessment(TRL)
     v1 = enterprise_docs.store_upload(
         project,
         EnterpriseProjectFile.KIND_WBST,
-        SimpleUploadedFile("wbst.docx", b"PK-wbst-v1", content_type=_DOCX),
+        SimpleUploadedFile("wbst.docx", minimal_docx("wbst-archive-v1"), content_type=_DOCX),
         enterprise,
     )
     report1 = generate_report(project, Report.TYPE_TRL, admin_user)
@@ -121,7 +123,7 @@ def test_report_wbst_bound_to_version(client, enterprise, admin_user):
     v2 = enterprise_docs.store_upload(
         project,
         EnterpriseProjectFile.KIND_WBST,
-        SimpleUploadedFile("wbst.docx", b"PK-wbst-v2", content_type=_DOCX),
+        SimpleUploadedFile("wbst.docx", minimal_docx("wbst-archive-v2"), content_type=_DOCX),
         enterprise,
     )
     assert v2.id != v1.id
@@ -133,12 +135,15 @@ def test_report_wbst_bound_to_version(client, enterprise, admin_user):
     r1 = client.get(reverse("reports:download_report_wbst", args=[report1.id]))
     r2 = client.get(reverse("reports:download_report_wbst", args=[report2.id]))
     assert r1.status_code == 200 and r2.status_code == 200
-    assert b"".join(r1.streaming_content) == b"PK-wbst-v1"
-    assert b"".join(r2.streaming_content) == b"PK-wbst-v2"
+    from io import BytesIO
+    from docx import Document
+
+    assert "wbst-archive-v1" in Document(BytesIO(b"".join(r1.streaming_content))).paragraphs[0].text
+    assert "wbst-archive-v2" in Document(BytesIO(b"".join(r2.streaming_content))).paragraphs[0].text
 
     current = client.get(reverse("reports:enterprise_download", args=[v2.id]))
     assert current.status_code == 200
-    assert b"".join(current.streaming_content) == b"PK-wbst-v2"
+    assert "wbst-archive-v2" in Document(BytesIO(b"".join(current.streaming_content))).paragraphs[0].text
 
 
 def test_enterprise_template_download(client, enterprise, rules):

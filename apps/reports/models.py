@@ -44,6 +44,22 @@ class Report(models.Model):
         related_name="bound_reports",
         verbose_name="归档 WBST",
     )
+    overview_file = models.ForeignKey(
+        "reports.EnterpriseProjectFile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bound_report_overviews",
+        verbose_name="归档项目概况",
+    )
+    support_file = models.ForeignKey(
+        "reports.EnterpriseProjectFile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bound_report_supports",
+        verbose_name="归档评价支撑信息",
+    )
 
     class Meta:
         constraints = [

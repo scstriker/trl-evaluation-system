@@ -357,6 +357,9 @@ def test_rectify_lock_resubmit_and_rereview(enterprise, admin_user, experts):
     # 结束后可以出报告
     assert eval_services.ready_for_report(assessment)
     EvaluationTeamMember.objects.create(project=project, group=EvaluationTeamMember.GROUP_SELF, role="组长", name="张工")
+    from tests.report_enterprise_fixtures import seed_enterprise_report_files
+
+    seed_enterprise_report_files(project, enterprise)
     report = generate_report(project, Report.TYPE_TRL, admin_user)
     assert report.trl_level == 3
 

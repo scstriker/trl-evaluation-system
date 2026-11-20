@@ -12,17 +12,22 @@ from apps.evaluations.models import Assessment, CheckItem, EvaluationTeamMember,
 from apps.reports import services as report_services
 from apps.reports.models import Report, ReportRequest
 from apps.rules.systems import MRL, TRL
+from tests.report_enterprise_fixtures import seed_enterprise_report_files
 from tests.test_core_flow import fill, make_project
 from tests.test_reports import _complete, _docx_text, _team
 
 SELF, THIRD = EvaluationTeamMember.GROUP_SELF, EvaluationTeamMember.GROUP_THIRD
 
 
-def _ready_project(enterprise, admin_user, target=2, groups=(SELF, THIRD)):
+def _ready_project(enterprise, admin_user, target=2, groups=(SELF, THIRD), seed_enterprise=True):
     project = make_project(enterprise, targets={TRL: target})
     _complete(project.get_assessment(TRL), enterprise, admin_user)
     if groups:
         _team(project, groups)
+    if seed_enterprise:
+        from tests.report_enterprise_fixtures import seed_enterprise_report_files
+
+        seed_enterprise_report_files(project, enterprise)
     return project
 
 
@@ -135,32 +140,29 @@ def test_enterprise_edits_only_self_team(client, enterprise, admin_user):
 
 
 def test_report_team_table_has_two_groups(enterprise, admin_user):
-    project = _ready_project(enterprise, admin_user, target=1)
+    project = _ready_project(enterprise, admin_user, target=1, seed_enterprise=False)
     report = report_services.build_report(project, Report.TYPE_TRL)
     team_block = next(b for b in report["blocks"] if b["kind"] == "team")
     assert [label for label, _ in team_block["groups"]] == ["自评估工作组", "第三方评价组"]
     assert any("成立了自评估工作组和第三方评价组" in b.get("text", "") for b in report["blocks"])
 
+    seed_enterprise_report_files(project, enterprise)
     record = report_services.generate_report(project, Report.TYPE_TRL, admin_user)
-    document = Document(BytesIO(record.file.read()))
-    team_table = next(t for t in document.tables if t.rows[0].cells[0].text == "自评估工作组")
-    # 表头沿用评价机构提供的固定模板
-    assert team_table.rows[1].cells[2].text == "职称"
-    labels = [row.cells[0].text for row in team_table.rows if row.cells[0].text in ("自评估工作组", "第三方评价组")]
-    assert labels == ["自评估工作组", "第三方评价组"]
-    # 每组至少 5 行，保持原版式的行数
-    assert len(team_table.rows) == 2 + 5 + 2 + 5
-    assert any(row.cells[1].text == "张工" for row in team_table.rows)
+    assert "张工" in _docx_text(record)
 
 
 def test_blockers_split_by_team(enterprise, admin_user):
     project = _ready_project(enterprise, admin_user, target=1, groups=())
     assert report_services.SELF_TEAM_MISSING in report_services.request_blockers(project, Report.TYPE_TRL)
     _team(project, (SELF,))
-    assert report_services.request_blockers(project, Report.TYPE_TRL) == []
+    blockers = report_services.request_blockers(project, Report.TYPE_TRL)
+    assert report_services.SELF_TEAM_MISSING not in blockers
     assert report_services.generate_blockers(project, Report.TYPE_TRL) == [report_services.THIRD_TEAM_MISSING]
     with pytest.raises(ValidationError):
         report_services.generate_report(project, Report.TYPE_TRL, admin_user)
+    seed_enterprise_report_files(project, enterprise)
+    _team(project, (THIRD,))
+    report_services.generate_report(project, Report.TYPE_TRL, admin_user)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +176,7 @@ def test_export_request_rules(enterprise, other_enterprise, admin_user):
     with pytest.raises(ValidationError):  # 未达到目标等级
         report_services.request_export(project, Report.TYPE_TRL, enterprise)
     _complete(project.get_assessment(TRL), enterprise, admin_user)
+    seed_enterprise_report_files(project, enterprise)
     for outsider in (admin_user, other_enterprise):
         with pytest.raises(PermissionDenied):
             report_services.request_export(project, Report.TYPE_TRL, outsider)
@@ -201,7 +204,8 @@ def test_export_request_rules(enterprise, other_enterprise, admin_user):
 
 
 def test_approve_needs_third_team(enterprise, admin_user):
-    project = _ready_project(enterprise, admin_user, target=1, groups=(SELF,))
+    project = _ready_project(enterprise, admin_user, target=1, groups=(SELF,), seed_enterprise=False)
+    seed_enterprise_report_files(project, enterprise)
     req = report_services.request_export(project, Report.TYPE_TRL, enterprise)
     with pytest.raises(ValidationError):
         report_services.approve_request(req, admin_user)
@@ -375,6 +379,7 @@ def test_admin_edit_item_text(client, enterprise, admin_user):
     services.submit_levels(assessment, enterprise, 2)
     services.pass_levels(assessment, admin_user, 2)
     _team(project)
+    seed_enterprise_report_files(project, enterprise)
     report_services.generate_report(project, Report.TYPE_TRL, admin_user)
     item = CheckItem.objects.get(pk=item.pk)  # 重新读取，避免沿用缓存的评价状态
     with pytest.raises(ValidationError):  # 已出报告需先重新开放

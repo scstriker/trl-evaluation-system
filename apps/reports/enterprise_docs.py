@@ -9,6 +9,7 @@ from django.db import transaction
 from django.utils.text import get_valid_filename
 
 from apps.evidence.services import ALLOWED_EXTENSIONS, _file_extension, _validate_uploaded_file
+from apps.reports.docx_merge import validate_overview_docx
 
 BASE_DIR = Path(settings.BASE_DIR)
 TEMPLATE_DIR = BASE_DIR / "data" / "templates" / "enterprise"
@@ -64,6 +65,14 @@ def store_upload(project, kind, uploaded_file, actor):
     if kind not in TEMPLATE_FILES:
         raise ValidationError("未知上传类型。")
     validate_enterprise_upload(uploaded_file)
+    if kind == EnterpriseProjectFile.KIND_OVERVIEW:
+        uploaded_file.seek(0)
+        payload = uploaded_file.read()
+        uploaded_file.seek(0)
+        try:
+            validate_overview_docx(payload)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
     ext = _file_extension(uploaded_file)
     if ext not in ALLOWED_EXTENSIONS:
         raise ValidationError("文件格式不支持。")

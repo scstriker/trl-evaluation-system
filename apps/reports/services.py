@@ -24,6 +24,7 @@ from apps.evaluations.services import get_achieved_level, get_reviews, mrl_enabl
 from apps.evidence.models import EvidenceFile
 from apps.notifications.models import CATEGORY_TODO
 from apps.notifications.services import notify, notify_admins
+from apps.reports import docx_preview
 from apps.reports import docx_render
 from apps.reports import pdf as pdf_service
 from apps.reports.models import Report, ReportFrontMatter, ReportRequest
@@ -152,7 +153,70 @@ def report_availability(project):
     return result
 
 
-def build_report(project, report_type, wbst=None):
+def _enterprise_files(project, overview=None, support=None, wbst=None):
+    from apps.reports.enterprise_docs import current_enterprise_file
+    from apps.reports.models import EnterpriseProjectFile
+
+    if overview is None:
+        overview = current_enterprise_file(project, EnterpriseProjectFile.KIND_OVERVIEW)
+    if support is None:
+        support = current_enterprise_file(project, EnterpriseProjectFile.KIND_SUPPORT)
+    if wbst is None:
+        wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
+    return overview, support, wbst
+
+
+def _placeholder_front_blocks():
+    return [
+        {"kind": "h1", "text": "1 概况"},
+        {
+            "kind": "p",
+            "text": "第 1～3 章待企业下载「项目概况」模板填写并上传；上传后本节将显示企业正文摘要。第 4 章起由系统按审核结果生成。",
+            "muted": True,
+        },
+    ]
+
+
+def _evidence_table_block(evidence_files):
+    return {
+        "kind": "table",
+        "headers": ["编号", "相关文件（佐证材料）", "关联细则", "SHA-256（前 16 位）"],
+        "rows": [
+            [index, e.original_filename, e.check_item.code, e.sha256[:16]]
+            for index, e in enumerate(evidence_files, start=1)
+        ]
+        or [["—", "（无佐证材料）", "—", "—"]],
+        "widths": [1.2, 8.3, 2.8, 3.7],
+    }
+
+
+def _appendix_trailer_blocks(evidence_files, *, merge_mode):
+    if not merge_mode:
+        return []
+    return [
+        {"kind": "h2", "text": "佐证材料 SHA 归档清单"},
+        _evidence_table_block(evidence_files),
+    ]
+
+
+def _preview_appendix_blocks(wbst, support, evidence_files):
+    blocks = [{"kind": "h1", "text": "7 附录"}]
+    if wbst:
+        blocks += docx_preview.appendix_status_block("附录A WBST 表", wbst.original_filename)
+        preview_rows = docx_preview.extract_blocks(wbst.file, limit_paras=40)
+        blocks += preview_rows[:12] if preview_rows else []
+    if support:
+        blocks += docx_preview.appendix_status_block("附录B 评价支撑信息", support.original_filename)
+        preview_rows = docx_preview.extract_blocks(support.file, limit_paras=40)
+        blocks += preview_rows[:12] if preview_rows else []
+    blocks += [
+        {"kind": "h2", "text": "佐证材料 SHA 归档清单"},
+        _evidence_table_block(evidence_files),
+    ]
+    return blocks
+
+
+def build_report(project, report_type, wbst=None, overview=None, support=None):
     systems = TYPE_SYSTEMS[report_type]
     assessments = {a.system: a for a in project.assessments.all()}
     parts = [_assessment_part(assessments[system]) for system in systems if system in assessments]
@@ -166,13 +230,23 @@ def build_report(project, report_type, wbst=None):
     )
     title = TYPE_TITLES[report_type]
     front = front_context(project, report_type, parts, team)
-    head = front_blocks(front)
-    if wbst is None:
-        from apps.reports.enterprise_docs import current_enterprise_file
-        from apps.reports.models import EnterpriseProjectFile
+    overview, support, wbst = _enterprise_files(project, overview=overview, support=support, wbst=wbst)
+    merge_mode = overview is not None
 
-        wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
-    tail = _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=wbst)
+    if merge_mode:
+        head = docx_preview.extract_blocks(overview.file)
+        if not head:
+            head = [{"kind": "p", "text": "（概况文件无法预览，生成报告时将按上传 Word 合并。）", "muted": True}]
+    else:
+        head = _placeholder_front_blocks() + front_blocks(front)
+
+    tail = _tail_blocks(
+        project, report_type, parts, evidence_files, start=4, wbst=wbst, merge_appendices=merge_mode
+    )
+    appendix_trailer = _appendix_trailer_blocks(evidence_files, merge_mode=merge_mode)
+    appendix_preview = _preview_appendix_blocks(wbst, support, evidence_files) if merge_mode else []
+    blocks = head + tail + appendix_preview
+
     return {
         "project": project,
         "report_type": report_type,
@@ -183,7 +257,13 @@ def build_report(project, report_type, wbst=None):
         "front": front,
         "front_blocks": head,
         "tail_blocks": tail,
-        "blocks": head + tail,
+        "appendix_trailer_blocks": appendix_trailer,
+        "appendix_preview_blocks": appendix_preview,
+        "merge_mode": merge_mode,
+        "enterprise_overview": overview,
+        "enterprise_support": support,
+        "enterprise_wbst": wbst,
+        "blocks": blocks,
     }
 
 
@@ -409,8 +489,8 @@ def front_blocks(front):
     return blocks
 
 
-def _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=None):
-    """系统生成的章节：评价准则、各类评价的等级分析、总结、附录。"""
+def _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=None, merge_appendices=False):
+    """系统生成的章节：评价准则、各类评价的等级分析、总结；附录在企业合并模式下单独处理。"""
     combined = report_type == Report.TYPE_COMBINED
     blocks = []
 
@@ -449,6 +529,9 @@ def _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=None
         blocks.append({"kind": "p", "text": text})
     blocks.append({"kind": "p", "text": f"综上所述，“{project.name}”的{_levels_text(parts)}。", "strong": True})
 
+    if merge_appendices:
+        return blocks
+
     appendix_title = "附录A WBST 评价支撑信息表" if wbst else "附录A 评价支撑信息清单"
     blocks.append({"kind": "h1", "text": appendix_title})
     if wbst:
@@ -458,18 +541,7 @@ def _tail_blocks(project, report_type, parts, evidence_files, start=4, wbst=None
                 "text": f"企业已上传 WBST 表文件「{wbst.original_filename}」（与报告一并归档，见系统下载）。",
             }
         )
-    blocks.append(
-        {
-            "kind": "table",
-            "headers": ["编号", "相关文件（佐证材料）", "关联细则", "SHA-256（前 16 位）"],
-            "rows": [
-                [index, e.original_filename, e.check_item.code, e.sha256[:16]]
-                for index, e in enumerate(evidence_files, start=1)
-            ]
-            or [["—", "（无佐证材料）", "—", "—"]],
-            "widths": [1.2, 8.3, 2.8, 3.7],
-        }
-    )
+    blocks.append(_evidence_table_block(evidence_files))
     return blocks
 
 
@@ -488,18 +560,30 @@ def _has_team(project, group):
 
 SELF_TEAM_MISSING = "自评估工作组成员尚未填写（由企业在“编辑报告信息”中填写）"
 THIRD_TEAM_MISSING = "第三方评价组成员尚未填写（由评价机构在“编辑报告信息”中填写）"
+OVERVIEW_MISSING = "尚未上传「项目概况」Word（请下载模板填写后上传）"
+WBST_MISSING = "尚未上传「附录A WBST 表」"
+SUPPORT_MISSING = "尚未上传「评价支撑信息」"
 
 
 def request_blockers(project, report_type):
-    """企业申请导出前需满足：评价达到目标等级、自评估工作组已填写。"""
+    """企业申请导出前需满足：评价达到目标等级、自评估工作组与企业材料已上传。"""
+    from apps.reports.enterprise_docs import current_enterprise_file
+    from apps.reports.models import EnterpriseProjectFile
+
     blockers = list(report_availability(project)[report_type]["reasons"])
     if not _has_team(project, EvaluationTeamMember.GROUP_SELF):
         blockers.append(SELF_TEAM_MISSING)
+    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_OVERVIEW):
+        blockers.append(OVERVIEW_MISSING)
+    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST):
+        blockers.append(WBST_MISSING)
+    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_SUPPORT):
+        blockers.append(SUPPORT_MISSING)
     return blockers
 
 
 def generate_blockers(project, report_type, actor=None):
-    blockers = request_blockers(project, report_type)
+    blockers = list(request_blockers(project, report_type))
     if not _has_team(project, EvaluationTeamMember.GROUP_THIRD):
         blockers.append(THIRD_TEAM_MISSING)
     if actor is not None and not can_generate_report(actor):
@@ -554,23 +638,47 @@ def _make_pdf(docx_bytes):
 def generate_report(project, report_type, actor):
     """生成新版本报告。Word 排版与 PDF 转换在数据库事务之外完成，避免长时间占用写锁。"""
     validate_can_generate(project, report_type, actor)
-    from apps.reports.enterprise_docs import current_enterprise_file
-    from apps.reports.models import EnterpriseProjectFile
-
-    wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
-    report = build_report(project, report_type, wbst=wbst)
+    overview, support, wbst = _enterprise_files(project)
+    report = build_report(project, report_type, overview=overview, support=support, wbst=wbst)
     now = timezone.localtime()
     max_version = project.reports.filter(report_type=report_type).aggregate(v=Max("version"))["v"] or 0
     version = max_version + 1
     report_no = f"{base_report_no(project, now)}-{TYPE_SUFFIX[report_type]}"
-    payload, pdf_bytes, converter = _make_pdf(docx_render.render(report, report_no))
+    enterprise_files = {"overview": overview, "support": support, "wbst": wbst}
+    payload, pdf_bytes, converter = _make_pdf(docx_render.render(report, report_no, enterprise_files=enterprise_files))
     with transaction.atomic():
         return _store_report(
-            project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter, wbst=wbst
+            project,
+            report_type,
+            actor,
+            report,
+            now,
+            version,
+            report_no,
+            payload,
+            pdf_bytes,
+            converter,
+            wbst=wbst,
+            overview=overview,
+            support=support,
         )
 
 
-def _store_report(project, report_type, actor, report, now, version, report_no, payload, pdf_bytes, converter, wbst=None):
+def _store_report(
+    project,
+    report_type,
+    actor,
+    report,
+    now,
+    version,
+    report_no,
+    payload,
+    pdf_bytes,
+    converter,
+    wbst=None,
+    overview=None,
+    support=None,
+):
     sha256 = hashlib.sha256(payload).hexdigest()
     filename = f"{report['title']}_{project.name}_V{version}.docx"
     levels = {part["sys"].code: part["achieved"] for part in report["parts"]}
@@ -586,6 +694,8 @@ def _store_report(project, report_type, actor, report, now, version, report_no, 
         mrl_level=levels.get(MRL),
         generated_by=actor,
         wbst_file=wbst,
+        overview_file=overview,
+        support_file=support,
     )
     record.file.save(filename, ContentFile(payload), save=False)
     if pdf_bytes:

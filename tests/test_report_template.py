@@ -59,16 +59,11 @@ def test_generated_word_follows_template(enterprise, admin_user):
     assert "委托单位：甲企业有限公司" in text and "评价报告出具单位：" in text and "二〇" in text
     assert "编制甲" in text and "审核乙" in text and "批准丙" in text
     assert "（盖章）" in text and docx_render.SEAL_MARK not in text
-    # 前置信息逐段填入，特殊字符原样保留
-    assert "任务来源第一段" in text and "任务来源第二段" in text
-    assert "产品介绍 <含尖括号> & 符号" in text
-    assert "3.2.1 关键模块甲设计情况" in text and "3.3.2 关键模块乙试制情况" in text
-    assert "3.4.3 软件验证情况" in text and "软件测评通过" in text
-    assert "《技术就绪度评价标准及细则》（2026 年版）" in text and "GB/T 22900-2022" in text
-    # 未填写的 2.1 / 2.4 用系统文字
-    assert "评价范围覆盖" in text and "逐级审核" in text
+    # 企业概况 Word 与壳层、系统章节拼接
+    assert "企业概况独有正文XYZ" in text
     # 第 4 章起由系统拼接；模板标签都已替换
-    assert "4 评价准则" in text and "5 技术就绪度评价" in text and "附录A" in text
+    assert "4 评价准则" in text and "5 技术就绪度评价" in text
+    assert "7 附录" in text or "附录A" in text
     assert "{{" not in text and "{%" not in text
     # 页眉
     headers = " ".join(p.text for s in document.sections for p in s.header.paragraphs)
@@ -99,15 +94,18 @@ def test_seal_image_is_floating(enterprise, admin_user, client):
 
 
 def test_preview_blocks_match_template_structure(client, enterprise, admin_user):
-    project = _ready_project(enterprise, admin_user)
-    _fill_front(project)
+    from tests.report_enterprise_fixtures import seed_enterprise_report_files
+
+    project = _ready_project(enterprise, admin_user, seed_enterprise=False)
+    report = report_services.build_report(project, Report.TYPE_TRL)
+    assert any("待企业下载" in b.get("text", "") for b in report["blocks"])
+    seed_enterprise_report_files(project, enterprise, overview_extra="预览可见正文片段")
     report = report_services.build_report(project, Report.TYPE_TRL)
     texts = [b.get("text", "") for b in report["blocks"]]
-    assert texts[0] == "1 概况" and "1.1.1 任务来源" in texts and "4 评价准则" in texts
-    assert any(b["kind"] == "h3" for b in report["blocks"])
+    assert "1 概况" in texts and "预览可见正文片段" in texts and "4 评价准则" in texts
     client.force_login(enterprise)
     page = client.get(f"/reports/projects/{project.id}/").content.decode()
-    assert "任务来源第一段" in page and "编制甲" in page and "编辑前置信息" not in page
+    assert "预览可见正文片段" in page and "编制甲" not in page
 
 
 def test_front_matter_page(client, enterprise, admin_user):

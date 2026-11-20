@@ -61,7 +61,7 @@ def report_preview(request, project_id):
     report = services.build_report(project, report_type)
     tabs = [{"type": key, "label": label, **availability[key]} for key, label in Report.TYPE_CHOICES if key in enabled]
     reports = project.reports.filter(report_type=report_type).select_related(
-        "generated_by__enterprise", "wbst_file"
+        "generated_by__enterprise", "wbst_file", "overview_file", "support_file"
     )
     pending_request = services.get_pending_request(project, report_type)
     last_request = services.get_last_request(project, report_type)
@@ -219,20 +219,29 @@ def download_report(request, report_id):
 
 
 @login_required
-def download_report_wbst(request, report_id):
-    report = get_object_or_404(
-        Report.objects.select_related("project", "wbst_file"),
-        pk=report_id,
-    )
+def _download_bound_enterprise_file(request, report_id, attr_name, label):
+    report = get_object_or_404(Report.objects.select_related("project", attr_name), pk=report_id)
     if not can_view_project(request.user, report.project):
         raise Http404("报告不存在。")
-    if not report.wbst_file or not report.wbst_file.file:
-        raise Http404("该版本未归档 WBST 文件。")
-    return FileResponse(
-        report.wbst_file.file.open("rb"),
-        as_attachment=True,
-        filename=report.wbst_file.original_filename,
-    )
+    bound = getattr(report, attr_name)
+    if not bound or not bound.file:
+        raise Http404(f"该版本未归档{label}文件。")
+    return FileResponse(bound.file.open("rb"), as_attachment=True, filename=bound.original_filename)
+
+
+@login_required
+def download_report_wbst(request, report_id):
+    return _download_bound_enterprise_file(request, report_id, "wbst_file", " WBST")
+
+
+@login_required
+def download_report_overview(request, report_id):
+    return _download_bound_enterprise_file(request, report_id, "overview_file", "项目概况")
+
+
+@login_required
+def download_report_support(request, report_id):
+    return _download_bound_enterprise_file(request, report_id, "support_file", "评价支撑信息")
 
 
 @login_required

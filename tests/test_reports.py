@@ -10,6 +10,7 @@ from apps.reports.models import Report
 from apps.reports.services import generate_report, report_availability
 from apps.rules.systems import MRL, TRL
 from tests.test_core_flow import fill, make_project
+from tests.report_enterprise_fixtures import seed_enterprise_report_files
 
 
 def _complete(assessment, owner, admin):
@@ -45,6 +46,9 @@ def test_trl_report_blocked_then_generated(enterprise, admin_user):
     _team(project)
     with pytest.raises(PermissionDenied):
         generate_report(project, Report.TYPE_TRL, enterprise)
+    with pytest.raises(ValidationError):  # 缺企业材料
+        generate_report(project, Report.TYPE_TRL, admin_user)
+    seed_enterprise_report_files(project, enterprise)
 
     report1 = generate_report(project, Report.TYPE_TRL, admin_user)
     assessment.refresh_from_db()
@@ -52,8 +56,8 @@ def test_trl_report_blocked_then_generated(enterprise, admin_user):
     assert report1.version == 1 and report1.trl_level == 2 and report1.mrl_level is None
     assert report1.report_no.endswith("-TRL")
     text = _docx_text(report1)
-    assert "技术就绪度评价报告" in text and "委托单位：" in text and "杜工" in text
-    assert "1.1.1 任务来源" in text and "4 评价准则" in text and "5 技术就绪度评价" in text
+    assert "技术就绪度评价报告" in text and "委托单位：" in text and "企业概况独有正文XYZ" in text
+    assert "4 评价准则" in text and "5 技术就绪度评价" in text
     assert "轨道" not in text and "Demo" not in text
 
     services.reopen_assessment(assessment, admin_user)
@@ -64,6 +68,7 @@ def test_trl_report_blocked_then_generated(enterprise, admin_user):
 def test_mrl_and_combined_reports(enterprise, admin_user, mrl_rules):
     project = make_project(enterprise, targets={TRL: 1, MRL: 2})
     _team(project)
+    seed_enterprise_report_files(project, enterprise)
     availability = report_availability(project)
     assert availability[Report.TYPE_COMBINED]["available"] and availability[Report.TYPE_COMBINED]["reasons"]
 
@@ -91,6 +96,7 @@ def test_enterprise_can_download_own_report(client, enterprise, other_enterprise
     project = make_project(enterprise, targets={TRL: 1})
     _complete(project.get_assessment(TRL), enterprise, admin_user)
     _team(project)
+    seed_enterprise_report_files(project, enterprise)
     report = generate_report(project, Report.TYPE_TRL, admin_user)
     client.force_login(enterprise)
     assert client.get(f"/reports/{report.id}/download/").status_code == 200

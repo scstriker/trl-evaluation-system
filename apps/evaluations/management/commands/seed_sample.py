@@ -24,6 +24,8 @@ from apps.experts.sample_data import seed_sample_experts
 from apps.notifications.models import Notification
 from apps.reports.models import Report
 from apps.reports.models import ReportModule
+from apps.reports import enterprise_docs
+from apps.reports.models import EnterpriseProjectFile
 from apps.reports.services import approve_request, get_front_matter, request_export
 from apps.reviews import services as review_services
 from apps.reviews import fees
@@ -234,6 +236,7 @@ class Command(BaseCommand):
         self._submit_and_pass(p3, hexin, admin, up_to=4)
         self._team(p3, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["hexin"])
         self._team(p3, EvaluationTeamMember.GROUP_THIRD, THIRD_TEAM)
+        self._enterprise_report_docs(p3, hexin)
         request_export(p3, Report.TYPE_TRL, hexin)
 
         # ④ 已退回：第 1 级通过，第 2~3 级退回修改（含逐条审核意见）
@@ -264,6 +267,7 @@ class Command(BaseCommand):
         self._submit_and_pass(p5, zhongnan, admin, up_to=3)
         self._team(p5, EvaluationTeamMember.GROUP_SELF, SELF_TEAMS["zhongnan"])
         self._team(p5, EvaluationTeamMember.GROUP_THIRD, THIRD_TEAM)
+        self._enterprise_report_docs(p5, zhongnan)
         approve_request(request_export(p5, Report.TYPE_TRL, zhongnan), admin)
         services.request_target_change(
             p5.get_assessment(TRL),
@@ -307,6 +311,14 @@ class Command(BaseCommand):
             EvaluationTeamMember.objects.create(
                 project=project, group=group, order=order, role=role, name=name, title=title, specialty=specialty, org=org
             )
+
+    def _enterprise_report_docs(self, project, owner):
+        """样例企业材料：最小 docx 文本，满足导出前校验（正式评价时企业替换为真实材料）。"""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from tests.report_enterprise_fixtures import seed_enterprise_report_files
+
+        seed_enterprise_report_files(project, owner)
 
     def _fill_item(self, item, owner):
         statement, support = STATEMENTS.get((item.level, item.track, item.seq), (DEFAULT_STATEMENT, ""))
@@ -464,6 +476,7 @@ class Command(BaseCommand):
         review_services.confirm_unanimous(r8, admin)
         review_services.finalize_round(r8, admin, summary="软件各级条件均有充分佐证，同意通过。")
         self._front_matter(p8)
+        self._enterprise_report_docs(p8, zhongnan)
         approve_request(request_export(p8, Report.TYPE_TRL, zhongnan), admin)
 
         # ⑨ 展示样例：企业已提交第 1~4 级，等待评价机构决定自行审核还是指派专家评审

@@ -17,7 +17,7 @@
     {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
 
     <div class="card">
-      <div class="card-head"><h2>封面与扉页</h2><span class="small muted">委托单位：{{ project.applicant }} · 评价报告出具单位：{{ project.issuer }}</span></div>
+      <div class="card-head"><h2>封面与扉页</h2><span class="small muted">若企业已上传「项目概况」Word，出具报告时以企业材料为准；本页供未上传时或编制/审核信息修订。</span></div>
       <div class="card-body form-grid">
         <div class="grid-2">
           {% for name in "compiled_by checked_by approved_by issue_date"|split_words %}{% with field=form|get_field:name %}

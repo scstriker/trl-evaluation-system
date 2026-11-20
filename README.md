@@ -63,8 +63,8 @@ python manage.py runserver
 
 ### 评价报告
 
-1. 评价完成后，企业在“评价报告”填写项目概况和**自评估工作组**，预览报告并申请导出；此前报告只能在线预览。
-2. 管理员在“编辑前置信息”中按固定模板逐节填写封面、扉页和第 1～3 章（任务来源、研究目标、关键技术 / 模块的设计、试制、验证情况等）。第 4 章起的评价准则、等级评价、总结和附录由系统按审核结果自动拼接。
+1. 评价完成后，企业在“评价报告”填写**自评估工作组**，并下载三类 Word 模板（项目概况、评价支撑信息、附录 A WBST）离线填写后上传；三类材料齐全后方可申请导出。此前报告只能在线预览（未上传时预览含占位说明，上传后展示企业正文摘要）。
+2. **项目概况** Word 覆盖第 1～3 章（勿含第 4 章及以后）；**附录 A** 使用系统提供的 WBST 表模板（表 c.1 V2）；**评价支撑信息**对应附录 B。出具报告时系统将封面/扉页（编制审核批准等可由管理员在「编辑前置信息」维护）+ 企业上传正文 + 第 4 章起的评价准则、等级评价、总结及附录合并为一份 Word。
 3. 管理员审核导出申请：通过即生成新版本报告，企业随即可以下载。生成 Word 后，本机有 Word 时用 Word 转 PDF 并刷新目录页码；只有 LibreOffice 时用 LibreOffice 转换；都没有时只出 Word。
 4. 在“系统设置”上传本单位的印章图片（PNG）后，报告扉页的出具单位和日期上会盖上印章。这是版式印章，不是有法律效力的电子签章。
 
@@ -80,6 +80,7 @@ python manage.py runserver
 python manage.py check_deadlines                       # 手动执行一次期限检查（页面访问时也会每 10 分钟自动检查）
 python manage.py import_experts 专家名单.xlsx          # 批量导入专家（表头同专家库页面“Excel 导入”说明）
 python scripts/prepare_report_template.py              # 报告原版式模板改版后，重新生成可填充的报告模板
+python scripts/prepare_enterprise_templates.py         # 重新生成企业「项目概况」「评价支撑信息」下载模板
 ```
 
 报告原版式模板放在 `data/templates/report/source/`，加工后的模板为 `data/templates/report/report_template.docx`。
@@ -125,7 +126,7 @@ tests/               pytest-django（python -m pytest -q）
 - 界面：细则区「评价支撑信息参考」；自评侧「相关文件」；列表不展示条目编号。
 - 桌面 exe 默认窗口 1280×800（可用 `TRL_WINDOW_WIDTH` / `TRL_WINDOW_HEIGHT` 覆盖）。
 - 名词：具体化等级条件→审核依据；满足建议→满足情况评价；点评→支撑材料评价。
-- 企业 Word 模板下载/上传（概况、WBST 等）**下一轮开发**；代码骨架已预留；已出具报告版本的 WBST 与生成时上传文件绑定下载。
+- 企业 Word 模板：正式模板位于 `data/templates/enterprise/`（含表 c.1 WBST）；`python scripts/prepare_enterprise_templates.py` 可重新生成概况与支撑信息模板。出具报告时合并企业材料；已出具版本可下载归档的概况 / WBST / 支撑文件。
 - 专家评审：整改要求仅由管理员编写后下发，不再自动带入专家建议原文。
 
 ## 设计规范
