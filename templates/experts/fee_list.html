@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}专家劳务{% endblock %}
+{% block header_title %}专家库{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>专家劳务记录</h1>
+    </div>
+    <div class="actions page-toolbar" style="margin:0">
+      <a class="btn secondary sm" href="{% url 'experts:fee_export' 'xlsx' %}?{{ query }}">导出 Excel</a>
+      <a class="btn ghost sm" href="{% url 'experts:fee_export' 'csv' %}?{{ query }}">导出 CSV</a>
+      <a class="btn ghost sm" href="{% url 'experts:expert_list' %}">← 返回专家库</a>
+    </div>
+  </div>
+  <details class="disclosure">
+    <summary>计费与结算说明</summary>
+    <p class="mt-0 mb-0">专家每提交一轮评审意见，系统生成一条记录，金额取“系统设置”中的默认劳务费。结算前可以修改金额和备注，标记结算后专家会收到站内私信。</p>
+  </details>
+
+  <div class="kpi-row">
+    <div class="kpi"><span class="l">劳务记录</span><span class="v">{{ totals.count }}<small>条</small></span><span class="d">未结算 {{ totals.unsettled_count }} 条</span></div>
+    <div class="kpi"><span class="l">未结算金额</span><span class="v">{{ totals.unsettled_amount|floatformat:2 }}<small>元</small></span><span class="d">待财务结算</span></div>
+    <div class="kpi"><span class="l">已结算金额</span><span class="v">{{ totals.settled_amount|floatformat:2 }}<small>元</small></span><span class="d">累计</span></div>
+  </div>
+
+  <div class="flex-between" style="margin-bottom:16px">
+    <div class="filter-tabs" style="margin:0" aria-label="结算状态">
+      <a href="?{% if expert_id %}expert={{ expert_id }}{% endif %}" {% if not status %}aria-current="true"{% endif %}>全部</a>
+      <a href="?status=unsettled{% if expert_id %}&expert={{ expert_id }}{% endif %}" {% if status == 'unsettled' %}aria-current="true"{% endif %}>未结算</a>
+      <a href="?status=settled{% if expert_id %}&expert={{ expert_id }}{% endif %}" {% if status == 'settled' %}aria-current="true"{% endif %}>已结算</a>
+    </div>
+    <form method="get" class="flex" style="gap:8px">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <select class="input" name="expert" style="width:200px;height:32px;padding:4px 8px;font-size:13px">
+        <option value="">全部专家</option>
+        {% for e in experts %}<option value="{{ e.user_id }}" {% if expert_id == e.user_id|stringformat:"d" %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
+      <button class="btn secondary sm" type="submit">筛选</button>
+    </form>
+  </div>
+
+  <form method="post" action="{% url 'experts:fee_settle' %}">
+    {% csrf_token %}<input type="hidden" name="query" value="{{ query }}">
+    <div class="card">
+      <div class="card-head"><h2>记录（{{ records|length }} 条）</h2><button class="btn primary sm" type="submit">将勾选的记录标记为已结算</button></div>
+      {% if records %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th style="width:40px"></th><th>专家</th><th>技术项目</th><th class="nowrap">评价 · 轮次</th><th class="num">条目</th><th class="num">金额（元）</th><th>状态</th><th>备注</th><th class="nowrap">生成时间</th><th class="nowrap">操作</th></tr></thead>
+          <tbody>
+            {% for r in records %}
+            <tr>
+              <td>{% if not r.is_settled %}<input type="checkbox" name="ids" value="{{ r.id }}" aria-label="选择">{% endif %}</td>
+              <td class="nowrap">{{ r.expert|who }}</td>
+              <td>{{ r.project_name }}{% if not r.project %}<div class="small muted">项目已删除</div>{% endif %}</td>
+              <td class="nowrap small">{% if r.system == 'mrl' %}MRL{% else %}TRL{% endif %} · 第 {{ r.round_number }} 轮</td>
+              <td class="num">{{ r.item_count }}</td>
+              <td class="num">{{ r.amount|floatformat:2 }}</td>
+              <td class="nowrap">{% if r.is_settled %}<span class="tag success">已结算</span><div class="small muted">{{ r.settled_at|date:"Y-m-d" }}</div>{% else %}<span class="tag neutral">未结算</span>{% endif %}</td>
+              <td class="small">{{ r.note|default:"—" }}</td>
+              <td class="nowrap small">{{ r.created_at|date:"Y-m-d H:i" }}</td>
+              <td class="nowrap">{% if not r.is_settled %}<button class="btn ghost sm" type="button" data-modal-open="fee-{{ r.id }}">修改</button>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state"><div class="big">暂无劳务记录</div><p>专家提交评审意见后会自动生成。</p></div>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for r in records %}{% if not r.is_settled %}
+<div class="modal-backdrop" id="fee-{{ r.id }}" role="dialog" aria-modal="true">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>修改劳务记录</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'experts:fee_edit' r.id %}">
+      {% csrf_token %}<input type="hidden" name="query" value="{{ query }}">
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">{{ r.expert|who }} · {{ r.project_name }} 第 {{ r.round_number }} 轮</p>
+        <div class="field"><label class="field-label" for="amount-{{ r.id }}">金额（元）</label><input class="input" type="number" id="amount-{{ r.id }}" name="amount" min="0" step="0.01" value="{{ r.amount }}"></div>
+        <div class="field"><label class="field-label" for="note-{{ r.id }}">备注</label><input class="input" type="text" id="note-{{ r.id }}" name="note" value="{{ r.note }}"></div>
+      </div>
+      <div class="modal-foot"><button class="btn secondary" type="button" data-modal-close>取消</button><button class="btn primary" type="submit">保存</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}{% endfor %}
+{% endblock %}

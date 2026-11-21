@@ -8,22 +8,27 @@
   <div class="page-head">
     <div>
       <h1>用户管理</h1>
-      <div class="sub">企业自助注册的账号须经审核启用后方可登录。请核对企业全称、统一社会信用代码与联系人信息。</div>
     </div>
   </div>
 
+  <div class="page-lead">
+    <p>企业自助注册的账号须经审核启用后方可登录。请核对企业全称、统一社会信用代码与联系人信息。</p>
+  </div>
+
+  <div class="page-section">
   <div class="filter-tabs" role="tablist" aria-label="账号状态">
     <a href="?" {% if not status_filter %}aria-current="true"{% endif %}>全部 <span>{{ total }}</span></a>
     {% for value, label in status_choices %}
     <a href="?status={{ value }}" {% if status_filter == value %}aria-current="true"{% endif %}>{{ label }} <span>{{ counts|get_item:value|default:0 }}</span></a>
     {% endfor %}
   </div>
+  </div>
 
-  <div class="card">
+  <div class="card page-section">
     <div class="card-head"><h2>企业账号</h2>{% if counts.pending %}<span class="tag warning">{{ counts.pending }} 个注册待审核</span>{% endif %}</div>
     {% if profiles %}
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead>
           <tr><th>企业中文全称</th><th>统一社会信用代码</th><th>联系人 / 手机</th><th>用户名</th><th class="nowrap">注册时间</th><th>状态</th><th>审核记录</th><th class="nowrap">操作</th></tr>
         </thead>

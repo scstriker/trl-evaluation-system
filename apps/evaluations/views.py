@@ -7,17 +7,21 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import (
+    admin_required,
     can_create_project,
     can_review,
+    can_view_project,
     get_visible_project_or_404,
     is_admin,
+    is_expert,
     is_project_owner,
     visible_projects,
 )
 from apps.audit.models import AuditLog
 from apps.evaluations import services
 from apps.evaluations.forms import ProjectForm
-from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, LevelReview
+from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, LevelReview, TargetChangeRequest
+from apps.reviews import services as review_services
 from apps.rules.models import LevelDefinition
 from apps.rules.systems import MRL, TRL, get_system
 
@@ -36,7 +40,14 @@ def _assessment_url(project_id, system, level=None, item=None):
     return f"{url}?{'&'.join(params)}" if params else url
 
 
+def _ensure_system_enabled(system):
+    """制造成熟度细则导入前，所有制造成熟度页面按不存在处理。"""
+    if not services.system_enabled(system):
+        raise Http404("该评价尚未开放。")
+
+
 def _get_assessment_or_404(request, project_id, system):
+    _ensure_system_enabled(system)
     project = get_visible_project_or_404(request.user, project_id)
     assessment = project.assessments.filter(system=system).first()
     if assessment is None:
@@ -51,6 +62,10 @@ def _get_assessment_or_404(request, project_id, system):
 
 @login_required
 def assessment_list(request, system):
+    if is_expert(request.user):
+        return redirect("accounts:home")
+    if not services.system_enabled(system):
+        return redirect("evaluations:trl_list")
     sys = get_system(system)
     admin = is_admin(request.user)
     projects = visible_projects(request.user).select_related("owner__enterprise").prefetch_related("assessments")
@@ -66,9 +81,12 @@ def assessment_list(request, system):
         achieved = services.get_achieved_level(assessment, reviews)
         submitted = services.get_submitted_levels(assessment, reviews)
         returned = services.get_returned_levels(assessment, reviews)
+        pending_target = services.get_pending_target_request(assessment)
         step_text, step_tone = services.next_step(assessment, admin)
         counters["total"] += 1
-        if assessment.status == Assessment.STATUS_REPORTED:
+        if admin and pending_target:
+            bucket = "submitted"
+        elif assessment.status == Assessment.STATUS_REPORTED:
             bucket = "reported"
         elif achieved >= assessment.target_level:
             bucket = "ready"
@@ -88,6 +106,7 @@ def assessment_list(request, system):
                 "bucket": bucket,
                 "step_text": step_text,
                 "step_tone": step_tone,
+                "pending_target": pending_target,
             }
         )
 
@@ -105,6 +124,7 @@ def assessment_list(request, system):
             "counters": counters,
             "can_create": can_create_project(request.user),
             "rules_ready": services.rules_available(system),
+            "recycle_count": EvaluationProject.all_objects.filter(deleted_at__isnull=False).count() if admin else 0,
             "active_nav": system,
         },
     )
@@ -121,6 +141,8 @@ def project_create(request):
         raise PermissionDenied("评价项目由企业用户申报。")
     profile = request.user.enterprise
     preset = request.GET.get("system", TRL)
+    if not services.mrl_enabled():
+        preset = TRL
     if request.method == "POST":
         form = ProjectForm(request.POST)
         if form.is_valid():
@@ -167,6 +189,7 @@ def project_home(request, project_id):
 @login_required
 @require_POST
 def add_assessment_view(request, project_id, system):
+    _ensure_system_enabled(system)
     project = get_visible_project_or_404(request.user, project_id)
     if not is_project_owner(request.user, project):
         raise PermissionDenied("只有申报企业可以追加评价。")
@@ -185,19 +208,19 @@ def add_assessment_view(request, project_id, system):
 
 def _default_level(assessment, states, admin):
     if admin:
-        for state in states:
-            if state["state"] == LevelReview.STATUS_SUBMITTED:
-                return state["level"]
+        wanted_states = (LevelReview.STATUS_SUBMITTED, services.STATE_EXPERT_REVIEW)
     else:
-        for wanted in (LevelReview.STATUS_RETURNED, services.STATE_DRAFT, services.STATE_READY):
-            for state in states:
-                if state["state"] == wanted:
-                    return state["level"]
+        wanted_states = (LevelReview.STATUS_RETURNED, services.STATE_DRAFT, services.STATE_READY)
+    for wanted in wanted_states:
+        for state in states:
+            if state["state"] == wanted:
+                return state["level"]
     return max(1, min(assessment.target_level, services.get_achieved_level(assessment) or 1))
 
 
 @login_required
 def assessment_detail(request, project_id, system):
+    _ensure_system_enabled(system)
     project = get_visible_project_or_404(request.user, project_id)
     sys = get_system(system)
     admin = is_admin(request.user)
@@ -236,8 +259,14 @@ def assessment_detail(request, project_id, system):
         model_name="CheckItem", object_id__in=[str(item.id) for item in items]
     ).select_related("actor__enterprise")[:300]:
         logs_by_item.setdefault(log.object_id, []).append(log)
+    level_editable = owner and services.is_level_editable(assessment, view_level, reviews)
+    locked_ids = review_services.expert_locked_item_ids(assessment) if level_editable else set()
+    feedback = review_services.item_feedback_map(assessment)
     for item in items:
         item.history = logs_by_item.get(str(item.id), [])
+        # 因专家评审退回的级别，只开放未通过专家评审的条目
+        item.can_edit = level_editable and item.id not in locked_ids
+        item.expert_feedback = feedback.get(item.id)
 
     groups = []
     for track, label in CheckItem.TRACK_CHOICES:
@@ -269,11 +298,23 @@ def assessment_detail(request, project_id, system):
             for level in services.get_returnable_levels(assessment, reviews)
         ]
 
-    item_editable = owner and services.is_level_editable(assessment, view_level, reviews)
+    item_editable = level_editable
+    admin_can_edit_text = admin and services.can_admin_edit_text(assessment, view_level, reviews)
+    pending_target = services.get_pending_target_request(assessment)
+    last_target = services.get_last_target_request(assessment)
+    open_modal = "target-modal" if owner and request.GET.get("adjust") and not pending_target else ""
     can_comment = (
         admin
         and assessment.status == Assessment.STATUS_IN_PROGRESS
         and current_state["state"] in (LevelReview.STATUS_SUBMITTED, LevelReview.STATUS_RETURNED)
+    )
+
+    expert_panel = review_services.panel_context(assessment, request.user, admin, owner)
+    review_round = expert_panel["round"]
+    show_returned_alert = bool(
+        owner
+        and returned_reviews
+        and (not review_round or review_round.status != "rectifying")
     )
 
     return render(
@@ -304,8 +345,16 @@ def assessment_detail(request, project_id, system):
             "review_attention": review_attention,
             "returnable": returnable,
             "resubmitted_reviews": [reviews[level] for level in submitted_levels if reviews[level].comment],
-            "ready_for_report": achieved >= assessment.target_level,
+            "ready_for_report": services.ready_for_report(assessment, reviews),
+            "expert_panel": expert_panel,
+            "show_returned_alert": show_returned_alert,
+            "expert_round": review_services.open_round(assessment),
             "reopen_item": request.GET.get("item", ""),
+            "open_modal": open_modal,
+            "admin_can_edit_text": admin_can_edit_text,
+            "pending_target": pending_target,
+            "last_target": last_target,
+            "target_options": services.target_options(assessment, reviews) if owner and not pending_target else [],
         },
     )
 
@@ -317,8 +366,8 @@ def assessment_detail(request, project_id, system):
 
 def _get_item_or_404(request, item_id):
     item = get_object_or_404(CheckItem.objects.select_related("assessment__project"), pk=item_id)
-    project = item.assessment.project
-    if not (is_admin(request.user) or is_project_owner(request.user, project)):
+    _ensure_system_enabled(item.assessment.system)
+    if not can_view_project(request.user, item.assessment.project):
         raise Http404("条目不存在。")
     return item
 
@@ -412,3 +461,133 @@ def reopen_view(request, project_id, system):
     except ValidationError as exc:
         messages.error(request, _errors(exc))
     return redirect(_assessment_url(project.id, system))
+
+
+@login_required
+@require_POST
+def item_admin_edit(request, item_id):
+    item = _get_item_or_404(request, item_id)
+    try:
+        services.admin_edit_item_text(item, request.user, request.POST.get("statement"), request.POST.get("support_info"))
+        messages.success(request, f"条目 {item.code} 的满足情况说明与评价支撑信息已更新，修改已留痕。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+        return redirect(_assessment_url(item.assessment.project_id, item.assessment.system, item.level, item.id))
+    return redirect(_assessment_url(item.assessment.project_id, item.assessment.system, item.level))
+
+
+# ---------------------------------------------------------------------------
+# 目标等级调整申请
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def target_request_view(request, project_id, system):
+    project, assessment = _get_assessment_or_404(request, project_id, system)
+    try:
+        change = services.request_target_change(assessment, request.user, request.POST.get("to_level"), request.POST.get("reason"))
+        sys = assessment.sys
+        messages.success(
+            request, f"已提交目标等级调整申请（{sys.abbr} {change.from_level} → {sys.abbr} {change.to_level}），评价机构审核通过后生效。"
+        )
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect(_assessment_url(project.id, system))
+
+
+def _get_target_request_or_404(request, request_id):
+    change = get_object_or_404(TargetChangeRequest.objects.select_related("assessment__project"), pk=request_id)
+    _ensure_system_enabled(change.assessment.system)
+    get_visible_project_or_404(request.user, change.assessment.project_id)
+    return change
+
+
+@login_required
+@require_POST
+def target_approve_view(request, request_id):
+    change = _get_target_request_or_404(request, request_id)
+    try:
+        assessment = services.approve_target_change(change, request.user)
+        sys = assessment.sys
+        messages.success(request, f"目标等级已调整为 {sys.abbr} {assessment.target_level}。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect(_assessment_url(change.assessment.project_id, change.assessment.system))
+
+
+@login_required
+@require_POST
+def target_reject_view(request, request_id):
+    change = _get_target_request_or_404(request, request_id)
+    try:
+        services.reject_target_change(change, request.user, request.POST.get("reason"))
+        messages.success(request, "已驳回目标等级调整申请，企业会看到驳回原因。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect(_assessment_url(change.assessment.project_id, change.assessment.system))
+
+
+# ---------------------------------------------------------------------------
+# 项目删除与回收站
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def project_delete(request, project_id):
+    project = get_visible_project_or_404(request.user, project_id)
+    try:
+        if request.POST.get("confirm") != "1":
+            raise ValidationError("请先勾选确认删除。")
+        services.delete_project(project, request.user, request.POST.get("reason"))
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+        return redirect("evaluations:project_home", project_id=project.id)
+    if is_admin(request.user):
+        messages.success(request, f"项目「{project.name}」已移入回收站，企业会收到删除通知。")
+    else:
+        messages.success(request, f"项目「{project.name}」已删除。")
+    return redirect("evaluations:trl_list")
+
+
+@admin_required
+def recycle_bin(request):
+    projects = (
+        EvaluationProject.all_objects.filter(deleted_at__isnull=False)
+        .select_related("owner__enterprise", "deleted_by__enterprise")
+        .prefetch_related("assessments")
+        .order_by("-deleted_at")
+    )
+    return render(request, "evaluations/recycle_bin.html", {"projects": projects, "active_nav": "trl"})
+
+
+def _get_deleted_project_or_404(project_id):
+    return get_object_or_404(EvaluationProject.all_objects.filter(deleted_at__isnull=False), pk=project_id)
+
+
+@admin_required
+@require_POST
+def recycle_restore(request, project_id):
+    project = _get_deleted_project_or_404(project_id)
+    try:
+        services.restore_project(project, request.user)
+        messages.success(request, f"项目「{project.name}」已恢复，企业会收到恢复通知。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect("evaluations:recycle_bin")
+
+
+@admin_required
+@require_POST
+def recycle_purge(request, project_id):
+    project = _get_deleted_project_or_404(project_id)
+    name = project.name
+    try:
+        if request.POST.get("confirm") != "1":
+            raise ValidationError("请先勾选确认彻底删除。")
+        services.purge_project(project, request.user)
+        messages.success(request, f"项目「{name}」已彻底删除，审计日志仍保留其操作记录。")
+    except (ValidationError, PermissionDenied) as exc:
+        messages.error(request, _errors(exc))
+    return redirect("evaluations:recycle_bin")

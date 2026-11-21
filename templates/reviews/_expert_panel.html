@@ -1,0 +1,75 @@
+{# 评价页“专家评审”状态面板：评价机构指派过专家评审后显示。需要 expert_panel（reviews.services.panel_context）/ assessment / sys / is_admin / is_owner #}
+{% load ui %}
+{% with p=expert_panel r=expert_panel.round %}
+{% if r %}
+<div class="card expert-panel{% if r.status == 'rectifying' %} attention-panel{% endif %}" id="expert-panel">
+  <div class="card-head">
+    <h2>专家评审 · 第 {{ r.number }} 轮</h2>
+    <div class="flex">
+      {% if r.status == 'assigning' %}<span class="tag info">{% if is_admin %}待分配专家{% else %}正在安排专家{% endif %}</span>
+      {% elif r.status == 'reviewing' %}<span class="tag info">专家评审中</span>
+      {% elif r.status == 'ruling' %}<span class="tag info">{% if is_admin %}待终审{% else %}专家评审中{% endif %}</span>
+      {% elif r.status == 'rectifying' %}<span class="tag warning">整改中</span>
+      {% else %}<span class="tag {% if r.outcome == 'passed' %}success{% else %}neutral{% endif %}">{{ r.get_outcome_display|default:"已结束" }}</span>{% endif %}
+      <a class="btn ghost sm" href="{% url 'reviews:history' assessment.id %}">评审记录</a>
+      {% if is_admin %}<a class="btn secondary sm" href="{% url 'reviews:round_detail' r.id %}">评审管理 →</a>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    {% if r.status == 'assigning' or r.status == 'reviewing' or r.status == 'ruling' %}
+      <p class="mt-0 mb-0">
+        评价机构已将提交的第 {{ r.items.all|levels_of }} 级（{{ r.items.count }} 条）交由专家评审。
+        {% if r.status == 'assigning' %}专家组正在组建（已确定 {{ p.slots_filled }}/3 位）。
+        {% elif is_admin %}三位专家已提交 {{ p.submitted_count }}/3 份意见。
+        {% else %}3 位专家正在逐条评审。{% endif %}
+        评审期间这些级别冻结，终审结果出来后会通过站内私信通知{% if is_owner %}你{% else %}企业{% endif %}。
+      </p>
+      {% if is_admin and p.assignments %}
+      <div class="slot-mini">
+        {% for a in p.assignments %}
+        <span class="tag {% if a.status == 'submitted' %}success{% elif a.is_overdue %}warning{% else %}neutral{% endif %}">席位 {{ a.slot }} · {{ a.expert.expert_profile.name }} · {% if a.is_overdue %}逾期 {{ a.overdue_days }} 天{% else %}{{ a.get_status_display }}{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    {% elif r.status == 'rectifying' %}
+      <div class="status-summary">
+        <span class="tag warning">{{ p.fails|length }} 条需整改</span>
+        <span>截止 {{ r.rectify_due_at|date:"Y-m-d H:i" }}</span>
+        {% if r.rectify_overdue %}<span class="tag warning">已逾期</span>{% endif %}
+        {% if is_owner %}<span class="hint">改完后在「逐级进度」中提交审核</span>{% endif %}
+      </div>
+      {% if r.feedback_summary %}<p class="small muted mt-0">终审意见：{{ r.feedback_summary }}</p>{% endif %}
+      {% if is_admin %}
+      <details class="disclosure">
+        <summary>整改流程说明</summary>
+        <p class="mt-0 mb-0">这些条目所在的级别已退回企业。企业修改后重新提交审核；退回的级别全部重新提交后，可以再决定自行审核或请专家复评。</p>
+      </details>
+      {% else %}
+      <p class="small muted mt-0">同一级别中已通过专家评审的条目保持冻结；需整改条目可修改并补充佐证。</p>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="data data-table--compact rectify-table">
+          <thead><tr><th>条目</th><th>整改要求</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for ri in p.fails %}
+            <tr>
+              <td class="mono">{{ ri.check_item.code }}</td>
+              <td class="prewrap">{{ ri.feedback }}</td>
+              <td><a class="btn ghost sm" href="?level={{ ri.check_item.level }}&item={{ ri.check_item_id }}">{% if is_owner %}去修改{% else %}查看{% endif %}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    {% else %}
+      <p class="mt-0 mb-0">
+        第 {{ r.number }} 轮专家评审{% if r.outcome == 'rectified' %}的整改已重新提交{% if is_admin %}，可在下方待审核面板中选择自行审核或专家复评{% else %}，等待评价机构审核{% endif %}{% elif r.outcome == 'passed' %}已结束，评审的级别全部通过{% else %}：{{ r.get_outcome_display }}{% endif %}。
+        {% if r.feedback_summary %}终审意见：{{ r.feedback_summary }}{% endif %}
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endwith %}

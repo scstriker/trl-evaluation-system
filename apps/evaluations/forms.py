@@ -2,6 +2,7 @@ from django import forms
 
 from apps.evaluations.models import EvaluationProject, EvaluationTeamMember
 from apps.evaluations.services import rules_available
+from apps.rules.models import Specialty
 from apps.rules.systems import MRL, SYSTEMS, TRL
 
 
@@ -19,9 +20,10 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = EvaluationProject
-        fields = ["name", "domain", "tech_type", "remark"]
+        fields = ["name", "specialty", "domain", "tech_type", "remark"]
         widgets = {
-            "name": forms.TextInput(attrs={"class": "input", "placeholder": "例如：稀土萃取分离过程元素成分在线检测仪表"}),
+            "name": forms.TextInput(attrs={"class": "input", "placeholder": "例如：XT萃取分离过程元素成分在线检测仪表"}),
+            "specialty": forms.Select(attrs={"class": "input"}),
             "domain": forms.TextInput(attrs={"class": "input", "placeholder": "例如：智能制造 / 仪器仪表 / 工业软件"}),
             "tech_type": forms.RadioSelect(),
             "remark": forms.Textarea(attrs={"class": "input", "rows": 3, "placeholder": "可选"}),
@@ -30,10 +32,25 @@ class ProjectForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["tech_type"].choices = EvaluationProject.TECH_TYPE_CHOICES
+        other = Specialty.objects.filter(code="other").first()
+        if other:
+            self.fields["specialty"].queryset = Specialty.objects.filter(pk=other.pk)
+            self.fields["specialty"].initial = other.pk
+            self.fields["specialty"].required = True
+            self.fields["specialty"].empty_label = None
+            self.fields["specialty"].help_text = "所属技术领域由评价机构在分配专家时确定，申报统一选择“其他”。"
+        else:
+            self.fields["specialty"].empty_label = "请选择技术领域"
         self.mrl_available = rules_available(MRL)
+        if not self.mrl_available:
+            # 制造成熟度细则导入前不开放，申报页只保留技术就绪度
+            del self.fields["include_mrl"]
+            del self.fields["mrl_target"]
 
     def clean(self):
         cleaned = super().clean()
+        if not self.mrl_available:
+            cleaned["include_trl"] = True
         if cleaned.get("include_mrl") and not self.mrl_available:
             self.add_error("include_mrl", "制造成熟度评价细则尚未导入，暂不能申报制造成熟度评价。")
         if not cleaned.get("include_trl") and not cleaned.get("include_mrl"):
@@ -84,3 +101,22 @@ TeamMemberFormSet = forms.inlineformset_factory(
         "org": forms.TextInput(attrs={"class": "input"}),
     },
 )
+
+
+def team_formset(project, group, data=None):
+    """评价组成员表单：按组（自评估工作组 / 第三方评价组）分别编辑。"""
+    return TeamMemberFormSet(
+        data,
+        instance=project,
+        prefix=f"team_{group}",
+        queryset=project.team_members.filter(group=group),
+    )
+
+
+def save_team_formset(formset, group):
+    members = formset.save(commit=False)
+    for member in members:
+        member.group = group
+        member.save()
+    for member in formset.deleted_objects:
+        member.delete()

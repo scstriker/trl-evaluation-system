@@ -33,7 +33,7 @@
             <td>{{ log.actor|who }}</td>
             <td class="nowrap"><span class="tag {{ log.tone }}">{{ log.label }}</span></td>
             <td>{{ log.object_repr }}</td>
-            <td>{% if log.project %}<a href="{% url 'evaluations:project_home' log.project.id %}">{{ log.project.name }}</a>{% else %}—{% endif %}</td>
+            <td>{% if log.project and not log.project.is_deleted %}<a href="{% url 'evaluations:project_home' log.project.id %}">{{ log.project.name }}</a>{% elif log.project_name %}{{ log.project_name }}<div class="small muted">{% if log.project %}在回收站中{% else %}已彻底删除{% endif %}</div>{% else %}—{% endif %}</td>
             <td class="small mono" style="max-width:360px;word-break:break-all">{% if log.before %}{{ log.before }} → {% endif %}{{ log.after|default:"" }}</td>
           </tr>
           {% empty %}

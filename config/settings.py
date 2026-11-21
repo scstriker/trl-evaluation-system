@@ -21,6 +21,9 @@ INSTALLED_APPS = [
     "apps.evaluations",
     "apps.evidence",
     "apps.reports",
+    "apps.notifications",
+    "apps.experts",
+    "apps.reviews",
 ]
 
 MIDDLEWARE = [
@@ -29,6 +32,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.reviews.middleware.DeadlineCheckMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -77,7 +81,18 @@ MEDIA_ROOT = Path(os.getenv("TRL_MEDIA_ROOT", BASE_DIR / "media"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "/login/"
-LOGIN_REDIRECT_URL = "/trl/"
+LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
 MAX_EVIDENCE_FILE_SIZE_MB = int(os.getenv("MAX_EVIDENCE_FILE_SIZE_MB", "50"))
+# 单请求上传体积须 ≥ 佐证大小上限，否则大 PDF 等会在进入视图前返回 400 Bad Request
+_UPLOAD_CAP = MAX_EVIDENCE_FILE_SIZE_MB * 1024 * 1024 + 2 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(_UPLOAD_CAP)))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", str(_UPLOAD_CAP)))
+
+# 期限检查：已登录用户访问页面时顺带执行，间隔秒数
+DEADLINE_CHECK_ENABLED = os.getenv("TRL_DEADLINE_CHECK", "1") == "1"
+DEADLINE_CHECK_INTERVAL = 600
+
+# 报告 PDF 转换方式：auto（有 Word 用 Word，否则 LibreOffice）/ word / libreoffice / none
+REPORT_PDF_CONVERTER = os.getenv("TRL_PDF_CONVERTER", "auto")

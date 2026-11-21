@@ -30,13 +30,20 @@
             <div class="hint">取自注册时填写的企业全称</div>
           </div>
           <div class="field">
-            <label class="field-label">评价出具单位</label>
+            <label class="field-label">评价报告出具单位</label>
             <input class="input" type="text" value="{{ issuer_name }}" disabled>
           </div>
         </div>
-        <div class="field">
-          <label class="field-label" for="{{ form.domain.id_for_label }}">应用领域</label>
-          {{ form.domain }}
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label" for="{{ form.specialty.id_for_label }}">所属技术领域</label>
+            {{ form.specialty }}
+            <div class="hint">评价机构按技术领域分配评审专家</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="{{ form.domain.id_for_label }}">应用领域</label>
+            {{ form.domain }}
+          </div>
         </div>
       </div>
     </div>
@@ -57,13 +64,22 @@
     </div>
 
     <div class="card">
+      {% if form.mrl_available %}
       <div class="card-head"><h2>评价内容与目标等级</h2><span class="small muted">可同时申报两类评价；评价自第 1 级起逐级审核至目标等级</span></div>
+      {% else %}
+      <div class="card-head"><h2>目标技术就绪度等级</h2><span class="small muted">评价自第 1 级起逐级审核至目标等级；申报后如需调整，可提出目标等级调整申请</span></div>
+      {% endif %}
       <div class="card-body form-grid">
         <div class="eval-choice">
+          {% if form.mrl_available %}
           <label class="check-line">
             <input type="checkbox" name="include_trl" value="on" {% if form.include_trl.value %}checked{% endif %} data-toggle-target="trl-levels">
             <span><strong>技术就绪度评价（TRL 1~9）</strong><span class="muted small">　依据《技术就绪度评价标准及细则》</span></span>
           </label>
+          {% else %}
+          <input type="hidden" name="include_trl" value="on">
+          <div class="check-line"><span><strong>技术就绪度评价（TRL 1~9）</strong><span class="muted small">　依据《技术就绪度评价标准及细则》</span></span></div>
+          {% endif %}
           <div id="trl-levels" class="eval-levels">
             {% if form.trl_target.errors %}<div class="error">{{ form.trl_target.errors|join:"；" }}</div>{% endif %}
             <div class="choice-grid cols-9">
@@ -81,14 +97,12 @@
           </div>
         </div>
 
-        <div class="eval-choice {% if not form.mrl_available %}disabled{% endif %}">
+        {% if form.mrl_available %}
+        <div class="eval-choice">
           <label class="check-line">
-            <input type="checkbox" name="include_mrl" value="on" {% if form.include_mrl.value and form.mrl_available %}checked{% endif %} {% if not form.mrl_available %}disabled{% endif %} data-toggle-target="mrl-levels">
+            <input type="checkbox" name="include_mrl" value="on" {% if form.include_mrl.value %}checked{% endif %} data-toggle-target="mrl-levels">
             <span><strong>制造成熟度评价（MRL 1~10）</strong><span class="muted small">　依据《制造成熟度评价标准及细则》</span></span>
           </label>
-          {% if not form.mrl_available %}
-          <div class="small muted" style="margin-left:28px">制造成熟度评价细则尚未导入，暂不能申报；导入后可在“MRL评价”中为本项目追加。</div>
-          {% endif %}
           {% if form.include_mrl.errors %}<div class="error">{{ form.include_mrl.errors|join:"；" }}</div>{% endif %}
           <div id="mrl-levels" class="eval-levels">
             {% if form.mrl_target.errors %}<div class="error">{{ form.mrl_target.errors|join:"；" }}</div>{% endif %}
@@ -106,6 +120,7 @@
             </details>
           </div>
         </div>
+        {% endif %}
       </div>
     </div>
 

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }}{% endblock %}
+{% block header_title %}{% if is_admin %}专家库{% else %}我的档案{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>{{ profile.name }}{% if profile.is_sample %} <span class="tag outline" style="vertical-align:4px">样例数据</span>{% endif %}</h1>
+      <div class="sub">{{ profile.organization }}{% if profile.title %} · {{ profile.title }}{% endif %}{% if profile.position %} · {{ profile.position }}{% endif %}</div>
+    </div>
+    <div class="actions">
+      {% if is_admin %}
+      <a class="btn secondary sm" href="{% url 'experts:expert_edit' profile.pk %}">编辑档案</a>
+      <a class="btn ghost sm" href="{% url 'experts:expert_list' %}">← 返回专家库</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if is_self %}
+  <div class="alert info">这是你在评价机构专家库中的档案。信息有误请联系评价机构修改。</div>
+  {% endif %}
+
+  <div class="expert-page">
+    <aside class="expert-infobox">
+      <div class="expert-mark" aria-hidden="true">{{ profile.initial }}</div>
+      <div class="expert-mark-name">{{ profile.name }}</div>
+      <table class="data kv">
+        <tbody>
+          <tr><th>工作单位</th><td>{{ profile.organization }}</td></tr>
+          <tr><th>职称</th><td>{{ profile.title|default:"—" }}</td></tr>
+          <tr><th>职务</th><td>{{ profile.position|default:"—" }}</td></tr>
+          <tr><th>专业领域</th><td>{{ profile.specialty.name }}</td></tr>
+          <tr><th>专家标识</th><td>{% for tag in profile.tags %}<span class="tag outline">{{ tag }}</span> {% empty %}—{% endfor %}</td></tr>
+          <tr><th>在职状态</th><td>{% if profile.in_service %}在职{% else %}不在职{% endif %}</td></tr>
+          <tr><th>手机</th><td class="mono">{{ profile.phone|default:"—" }}</td></tr>
+          <tr><th>邮箱</th><td>{{ profile.email|default:"—" }}</td></tr>
+          {% if profile.website %}<tr><th>个人网站</th><td style="word-break:break-all"><a href="{{ profile.website }}" target="_blank" rel="noopener noreferrer">{{ profile.website }}</a></td></tr>{% endif %}
+          {% if is_admin %}<tr><th>登录账号</th><td class="mono">{{ profile.user.username }}{% if not profile.user.is_active %}（已停用）{% endif %}</td></tr>{% endif %}
+        </tbody>
+      </table>
+    </aside>
+
+    <div class="expert-main">
+      {% if profile.has_homepage %}
+      {% if profile.bio %}
+      <section class="expert-section">
+        <h2>简介</h2>
+        <p class="prewrap">{{ profile.bio }}</p>
+      </section>
+      {% endif %}
+      {% if profile.research %}
+      <section class="expert-section">
+        <h2>研究方向</h2>
+        <p class="prewrap">{{ profile.research }}</p>
+      </section>
+      {% endif %}
+      {% if profile.achievement_lines %}
+      <section class="expert-section">
+        <h2>代表成果</h2>
+        <ol class="expert-list">{% for line in profile.achievement_lines %}<li>{{ line }}</li>{% endfor %}</ol>
+      </section>
+      {% endif %}
+      {% if profile.experience_lines %}
+      <section class="expert-section">
+        <h2>教育与任职经历</h2>
+        <ul class="expert-timeline">{% for line in profile.experience_lines %}<li>{{ line }}</li>{% endfor %}</ul>
+      </section>
+      {% endif %}
+      {% else %}
+      <section class="expert-section">
+        <div class="empty-state" style="padding:var(--space-6) var(--space-4)">
+          <div class="big">暂无详细介绍</div>
+          <p>{% if is_admin %}在“编辑档案”中填写简介、研究方向和代表成果后，这里会显示完整的专家主页。{% else %}评价机构补充资料后，这里会显示你的详细介绍。{% endif %}</p>
+        </div>
+      </section>
+      {% endif %}
+      {% if assignments %}
+      <section class="expert-section">
+        <h2>评审记录</h2>
+        <table class="data">
+          <thead><tr><th>技术项目</th><th class="nowrap">评价 · 轮次</th><th class="nowrap">分配时间</th><th>状态</th></tr></thead>
+          <tbody>
+            {% for a in assignments %}
+            <tr>
+              <td>{% if is_self and a.status != 'cancelled' and a.status != 'declined' %}<a href="{% url 'reviews:task_detail' a.id %}">{{ a.round.assessment.project.name }}</a>{% elif is_admin %}<a href="{% url 'reviews:round_detail' a.round_id %}">{{ a.round.assessment.project.name }}</a>{% else %}{{ a.round.assessment.project.name }}{% endif %}</td>
+              <td class="nowrap small">{{ a.round.assessment.sys.abbr }} · 第 {{ a.round.number }} 轮</td>
+              <td class="nowrap small">{{ a.assigned_at|date:"Y-m-d" }}</td>
+              <td class="nowrap"><span class="tag {% if a.status == 'submitted' %}success{% elif a.is_overdue %}warning{% else %}neutral{% endif %}">{% if a.is_overdue %}逾期 {{ a.overdue_days }} 天{% else %}{{ a.get_status_display }}{% endif %}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+      {% if fees %}
+      <section class="expert-section">
+        <h2>劳务记录</h2>
+        <table class="data">
+          <thead><tr><th>技术项目</th><th class="nowrap">轮次</th><th class="num">金额（元）</th><th>状态</th></tr></thead>
+          <tbody>
+            {% for f in fees %}
+            <tr><td>{{ f.project_name }}</td><td class="nowrap small">第 {{ f.round_number }} 轮</td><td class="num">{{ f.amount|floatformat:2 }}</td><td class="nowrap">{% if f.is_settled %}<span class="tag success">已结算 {{ f.settled_at|date:"m-d" }}</span>{% else %}<span class="tag neutral">未结算</span>{% endif %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

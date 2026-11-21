@@ -136,8 +136,10 @@ def test_admin_only_pages(client, enterprise, admin_user):
         assert client.get(url).status_code == 403, url
     assert client.get("/rules/process/").status_code == 200
     client.force_login(admin_user)
-    for url in ["/rules/trl/", "/rules/mrl/", "/users/", "/audit/", "/rules/process/"]:
+    for url in ["/rules/trl/", "/users/", "/audit/", "/rules/process/"]:
         assert client.get(url).status_code == 200, url
+    # 制造成熟度细则未导入时，MRL 细则页转到 TRL 细则页
+    assert client.get("/rules/mrl/").url == "/rules/trl/"
     # 管理员不申报项目
     assert client.get("/projects/new/").status_code == 403
 
@@ -177,7 +179,7 @@ def test_pages_render_without_forbidden_wording(client, enterprise, admin_user, 
             assert not found, (user.username, url, found and found.group(0))
 
 
-def test_create_project_via_form(client, enterprise, mrl_rules):
+def test_create_project_via_form(client, enterprise, mrl_rules, specialty_other):
     client.force_login(enterprise)
     response = client.post(
         "/projects/new/",
@@ -189,6 +191,7 @@ def test_create_project_via_form(client, enterprise, mrl_rules):
             "trl_target": "3",
             "include_mrl": "on",
             "mrl_target": "2",
+            "specialty": specialty_other.pk,
             "remark": "",
         },
     )
@@ -199,7 +202,7 @@ def test_create_project_via_form(client, enterprise, mrl_rules):
     assert {a.system for a in project.assessments.all()} == {"trl", "mrl"}
 
 
-def test_create_project_requires_a_system(client, enterprise):
+def test_create_project_requires_a_system(client, enterprise, mrl_rules):
     client.force_login(enterprise)
     response = client.post("/projects/new/", {"name": "空项目", "tech_type": "hardware", "trl_target": "3"})
     assert response.status_code == 200

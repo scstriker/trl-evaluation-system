@@ -13,11 +13,22 @@ from apps.rules.systems import MRL
 @pytest.fixture(autouse=True)
 def _sandbox_media(settings):
     settings.MEDIA_ROOT = tempfile.mkdtemp(prefix="trl-test-media-")
+    # 页面访问时的期限检查默认关闭，由 test_deadlines 单独验证
+    settings.DEADLINE_CHECK_ENABLED = False
+    # 生成报告时默认不调用 Word 转 PDF（慢），由 test_report_template 单独验证
+    settings.REPORT_PDF_CONVERTER = "none"
 
 
 @pytest.fixture
 def rules(db):
     call_command("import_rules", verbosity=0)
+
+
+@pytest.fixture
+def specialty_other(db):
+    from apps.rules.models import Specialty
+
+    return Specialty.objects.get_or_create(code="other", defaults={"name": "其他", "order": 0})[0]
 
 
 @pytest.fixture

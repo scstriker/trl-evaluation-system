@@ -1,18 +1,56 @@
 {# 项目页头 + 页签：需要 project / tabs（已开展的评价类别集合）/ tab（当前页签：trl|mrl|report） #}
+{% load ui %}
 <div class="page-head">
   <div>
     <h1>{{ project.name }}</h1>
     <div class="sub">
-      {{ project.applicant }} · {{ project.get_tech_type_display }}{% if project.domain %} · {{ project.domain }}{% endif %}
-      {% if project.report_no %} · 报告编号 {{ project.report_no }}{% endif %}
+      <span>{{ project.applicant }}</span>
+      <span>{{ project.get_tech_type_display }}</span>
+      {% if project.specialty %}<span>{{ project.specialty.name }}</span>{% endif %}
+      {% if project.domain %}<span>{{ project.domain }}</span>{% endif %}
+      {% if project.report_no %}<span>报告编号 {{ project.report_no }}</span>{% endif %}
     </div>
   </div>
   <div class="actions">
+    {% if request.user|can_delete_project:project %}
+    <button class="btn ghost sm" type="button" data-modal-open="project-delete-modal">
+      <svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+      删除项目
+    </button>
+    {% endif %}
     <a class="btn ghost sm" href="{% if tab == 'mrl' %}{% url 'evaluations:mrl_list' %}{% else %}{% url 'evaluations:trl_list' %}{% endif %}">← 返回项目列表</a>
   </div>
 </div>
 <nav class="project-tabs" aria-label="项目页签">
   <a href="{% url 'evaluations:assessment_detail' project.id 'trl' %}" {% if tab == 'trl' %}aria-current="page"{% endif %}>技术就绪度评价{% if 'trl' not in tabs %}<span class="muted small">（未开展）</span>{% endif %}</a>
-  <a href="{% url 'evaluations:assessment_detail' project.id 'mrl' %}" {% if tab == 'mrl' %}aria-current="page"{% endif %}>制造成熟度评价{% if 'mrl' not in tabs %}<span class="muted small">（未开展）</span>{% endif %}</a>
+  {% if mrl_enabled %}<a href="{% url 'evaluations:assessment_detail' project.id 'mrl' %}" {% if tab == 'mrl' %}aria-current="page"{% endif %}>制造成熟度评价{% if 'mrl' not in tabs %}<span class="muted small">（未开展）</span>{% endif %}</a>{% endif %}
   <a href="{% url 'reports:report_preview' project.id %}" {% if tab == 'report' %}aria-current="page"{% endif %}>评价报告</a>
 </nav>
+
+{% if request.user|can_delete_project:project %}
+<div class="modal-backdrop" id="project-delete-modal" role="dialog" aria-modal="true" aria-labelledby="project-delete-title">
+  <div class="modal narrow">
+    <div class="modal-head"><h3 id="project-delete-title">删除评价项目</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'evaluations:project_delete' project.id %}">
+      {% csrf_token %}
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">删除「<strong>{{ project.name }}</strong>」及其全部评价条目、佐证材料和报告。</p>
+        {% if current_is_admin %}
+        <div class="field">
+          <label class="field-label" for="delete-reason">删除理由 <span class="req">（必填，企业会在站内私信中看到）</span></label>
+          <textarea class="input" id="delete-reason" name="reason" rows="3" required></textarea>
+        </div>
+        <p class="small muted mt-0 mb-0">项目会先移入回收站，可在“回收站”中恢复或彻底删除。</p>
+        {% else %}
+        <p class="small muted mt-0 mb-0">项目尚未提交审核，可以删除。删除后如需找回，请联系评价机构。</p>
+        {% endif %}
+        <label class="check-line"><input type="checkbox" name="confirm" value="1" required> 我确认删除该项目</label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn danger" type="submit">确认删除</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}

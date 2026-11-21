@@ -18,6 +18,8 @@ class AuditLog(models.Model):
         on_delete=models.SET_NULL,
         related_name="audit_logs",
     )
+    # 项目被彻底删除后外键置空，靠项目名称保留可读性
+    project_name = models.CharField(max_length=255, blank=True)
     before = models.JSONField(null=True, blank=True)
     after = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -27,3 +29,8 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.action} {self.object_repr or self.object_id}"
+
+    def save(self, *args, **kwargs):
+        if self.project_id and not self.project_name:
+            self.project_name = self.project.name
+        super().save(*args, **kwargs)

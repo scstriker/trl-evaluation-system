@@ -6,6 +6,7 @@ from apps.accounts import views
 app_name = "accounts"
 
 urlpatterns = [
+    path("", views.home, name="home"),
     path("login/", views.SystemLoginView.as_view(), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("register/", views.register, name="register"),
@@ -14,4 +15,6 @@ urlpatterns = [
     path("account/", views.account, name="account"),
     path("users/", views.user_list, name="user_list"),
     path("users/<int:profile_id>/<slug:action>/", views.user_action, name="user_action"),
+    path("settings/", views.system_settings, name="settings"),
+    path("settings/seal.png", views.seal_image, name="seal_image"),
 ]

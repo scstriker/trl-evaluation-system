@@ -1,7 +1,8 @@
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from apps.accounts.permissions import admin_required
+from apps.evaluations.services import system_enabled
 from apps.rules.models import LevelDefinition, RuleItem
 from apps.rules.systems import MRL, TRL, get_system
 
@@ -9,6 +10,8 @@ from apps.rules.systems import MRL, TRL, get_system
 @admin_required
 def rule_library(request, system=TRL):
     """评价细则库（仅管理员）：按等级展示全部细则条目。"""
+    if not system_enabled(system):
+        return redirect("rules:trl_rules")
     sys = get_system(system)
     items = list(RuleItem.objects.filter(system=system))
     levels = []

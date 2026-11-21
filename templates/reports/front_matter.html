@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}封面与扉页 · {{ project.name }}{% endblock %}
+{% block header_title %}评价报告{% endblock %}
+
+{% block content %}
+<div class="page">
+  {% include "evaluations/_project_head.html" with tab="report" %}
+
+  <div class="status-summary">
+    <span class="tag info">封面扉页</span>
+    <span class="hint">编制 / 审核 / 批准 / 日期；第 1～3 章与附录由企业 Word 上传</span>
+  </div>
+  <details class="disclosure">
+    <summary>填写规则</summary>
+    <p class="mt-0 mb-0">本页仅维护封面与扉页的编制、审核、批准与出具日期。第 1～3 章及附录 A/B 须由企业在「评价报告」下载「企业报告材料」模板填写后上传；第 4 章起由系统按审核结果自动拼接。若企业已上传材料，出具报告时以企业 Word 正文为准，本页信息仍用于封面扉页显示。</p>
+  </details>
+
+  <form method="post" novalidate data-dirty-guard>
+    {% csrf_token %}<input type="hidden" name="type" value="{{ report_type }}">
+    {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
+
+    <div class="card">
+      <div class="card-head"><h2>封面与扉页</h2><span class="small muted">编制、审核、批准与出具日期；评价依据版本号可选填。</span></div>
+      <div class="card-body form-grid">
+        <div class="grid-2">
+          {% for name in "compiled_by checked_by approved_by issue_date"|split_words %}{% with field=form|get_field:name %}
+          <div class="field">
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if name == "issue_date" %}<div class="hint">留空则取生成当天，封面显示为“二〇二六年十月”格式</div>{% endif %}
+            {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+          </div>
+          {% endwith %}{% endfor %}
+        </div>
+        <div class="field">
+          <label class="field-label" for="{{ form.standard_version.id_for_label }}">{{ form.standard_version.label }}</label>
+          {{ form.standard_version }}
+          <div class="hint">填写后替换 2.2 评价依据中评价细则的名称，例如：《技术就绪度评价标准及细则》（2026 年版）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex" style="justify-content:flex-end;margin-top:var(--space-5)">
+      <a class="btn secondary" href="{% url 'reports:report_preview' project.id %}?type={{ report_type }}">返回报告预览</a>
+      <button class="btn primary" type="submit">保存封面扉页</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

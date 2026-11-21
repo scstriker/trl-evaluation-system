@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}评审任务{% endblock %}
+{% block header_title %}评审任务{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="page-head">
+    <div>
+      <h1>评审任务</h1>
+      <div class="sub">评价机构分配给你的专家评审任务。接受任务前请阅读保密与回避承诺；与被评企业有利害关系的，请拒绝并说明原因。你的意见只有评价机构能看到，其他专家和被评企业都看不到。</div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi {% if pending %}hi{% endif %}"><span class="l">待处理</span><span class="v">{{ pending|length }}<small>项</small></span><span class="d">待接受或评审中</span></div>
+    <div class="kpi"><span class="l">全部任务</span><span class="v">{{ assignments|length }}<small>项</small></span><span class="d">含已提交、已拒绝的任务</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>任务列表</h2></div>
+    {% if assignments %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>技术项目</th><th>评价内容</th><th class="num">评审条目</th><th class="nowrap">分配时间</th><th class="nowrap">截止时间</th><th>状态</th><th class="nowrap">操作</th></tr></thead>
+        <tbody>
+          {% for a in assignments %}
+          {% with project=a.round.assessment.project %}
+          <tr>
+            <td><strong>{{ project.name }}</strong><div class="small muted">{{ project.applicant }}{% if project.specialty %} · {{ project.specialty.name }}{% endif %}</div></td>
+            <td class="nowrap">{{ a.round.assessment.sys.name }}评价 · 第 {{ a.round.number }} 轮{% if a.round.number > 1 %}<div class="small muted">复评上轮未通过条目</div>{% endif %}</td>
+            <td class="num">{{ a.item_count }}</td>
+            <td class="nowrap small">{{ a.assigned_at|date:"Y-m-d" }}</td>
+            <td class="nowrap small">{{ a.due_at|date:"Y-m-d" }}{% if a.is_overdue %}<div><span class="tag warning">已逾期 {{ a.overdue_days }} 天</span></div>{% endif %}</td>
+            <td class="nowrap">
+              {% if a.status == 'invited' %}<span class="tag warning">待接受</span>
+              {% elif a.status == 'accepted' %}<span class="tag info">评审中</span>
+              {% elif a.status == 'submitted' %}<span class="tag success">已提交</span>
+              {% elif a.status == 'declined' %}<span class="tag neutral">已拒绝</span>
+              {% else %}<span class="tag neutral">已撤销</span>{% endif %}
+            </td>
+            <td class="nowrap">
+              {% if a.status == 'invited' %}
+                <button class="btn primary sm" type="button" data-modal-open="accept-{{ a.id }}">接受…</button>
+                <button class="btn ghost sm" type="button" data-modal-open="decline-{{ a.id }}">拒绝…</button>
+              {% elif a.status == 'accepted' %}
+                <a class="btn primary sm" href="{% url 'reviews:task_detail' a.id %}">开始 / 继续评审</a>
+              {% elif a.status == 'submitted' %}
+                <a class="btn secondary sm" href="{% url 'reviews:task_detail' a.id %}">查看意见</a>
+              {% elif a.status == 'declined' %}<span class="small muted">{{ a.decline_reason }}</span>
+              {% else %}<span class="small muted">{{ a.cancel_reason }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="big">暂无评审任务</div><p>评价机构分配任务后，会通过站内私信通知你，任务也会出现在这里。</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for a in assignments %}{% if a.status == 'invited' %}
+{% with project=a.round.assessment.project %}
+<div class="modal-backdrop" id="accept-{{ a.id }}" role="dialog" aria-modal="true" aria-labelledby="accept-title-{{ a.id }}">
+  <div class="modal">
+    <div class="modal-head"><h3 id="accept-title-{{ a.id }}">接受评审任务 · 保密与回避承诺</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:task_respond' a.id %}">
+      {% csrf_token %}<input type="hidden" name="action" value="accept">
+      <div class="modal-body">
+        <table class="data kv"><tbody>
+          <tr><th>技术项目</th><td>{{ project.name }}</td></tr>
+          <tr><th>委托单位</th><td>{{ project.applicant }}</td></tr>
+          <tr><th>评价内容</th><td>{{ a.round.assessment.sys.name }}评价 · 第 {{ a.round.number }} 轮 · {{ a.item_count }} 条</td></tr>
+          <tr><th>截止时间</th><td>{{ a.due_at|date:"Y-m-d H:i" }}</td></tr>
+        </tbody></table>
+        <p style="margin-top:16px"><strong>本人承诺：</strong></p>
+        <ol class="pledge-list">{% for clause in pledge %}<li>{{ clause }}</li>{% endfor %}</ol>
+        <label class="check-line" style="margin-top:12px">
+          <input type="checkbox" name="pledge" value="1" required>
+          <span>我已阅读并遵守以上保密与回避承诺。</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn primary" type="submit">签署承诺并接受</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="modal-backdrop" id="decline-{{ a.id }}" role="dialog" aria-modal="true">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>拒绝评审任务</h3><button class="modal-close" type="button" data-modal-close aria-label="关闭">×</button></div>
+    <form method="post" action="{% url 'reviews:task_respond' a.id %}">
+      {% csrf_token %}<input type="hidden" name="action" value="decline">
+      <div class="modal-body form-grid">
+        <p class="mt-0 mb-0">拒绝「{{ project.name }}」的评审任务后，评价机构会另行安排专家。</p>
+        <div class="field">
+          <label class="field-label" for="decline-reason-{{ a.id }}">拒绝原因 *（仅评价机构可见）</label>
+          <textarea class="input" id="decline-reason-{{ a.id }}" name="reason" rows="3" required placeholder="例如：与该企业有合作关系需回避 / 评审期间出差无法按期完成"></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" type="button" data-modal-close>取消</button>
+        <button class="btn primary" type="submit">确认拒绝</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endwith %}
+{% endif %}{% endfor %}
+{% endblock %}

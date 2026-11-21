@@ -7,10 +7,9 @@
   <div class="page-head">
     <div>
       <h1>{{ sys.name }}（{{ sys.abbr }}）评价细则</h1>
-      <div class="sub">{{ sys.standard }}：{{ sys.abbr }} 1~{{ sys.max_level }} 级定义与 {{ total_items }} 条具体化等级条件{% if has_tracks %}（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）{% endif %}。企业申报时按本细则生成自评条目；细则修订不影响已申报的项目。本页仅评价机构管理员可见。</div>
     </div>
     {% if total_items %}
-    <div class="actions">
+    <div class="actions page-toolbar" style="margin:0">
       {% if has_tracks %}
       <select id="rule-track-filter" class="input" style="width:auto">
         <option value="">全部类别</option>
@@ -23,14 +22,18 @@
     {% endif %}
   </div>
   {% include "rules/_rules_tabs.html" %}
+  <details class="disclosure">
+    <summary>细则说明</summary>
+    <p class="mt-0 mb-0">{{ sys.standard }}：{{ sys.abbr }} 1~{{ sys.max_level }} 级定义与 {{ total_items }} 条审核依据{% if has_tracks %}（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）{% endif %}。企业申报时按本细则生成自评条目；细则修订不影响已申报的项目。本页仅评价机构管理员可见。</p>
+  </details>
 
   {% if not total_items %}
   <div class="card" style="margin-bottom:24px">
     <div class="card-head"><h2>{{ sys.name }}评价细则尚未导入</h2><span class="tag warning">待导入</span></div>
     <div class="card-body">
-      <p class="mt-0">当前仅有 {{ sys.abbr }} 1~{{ sys.max_level }} 级的等级定义，尚无逐条的具体化等级条件，企业暂不能申报{{ sys.name }}评价。导入步骤：</p>
+      <p class="mt-0">当前仅有 {{ sys.abbr }} 1~{{ sys.max_level }} 级的等级定义，尚无逐条的审核依据，企业暂不能申报{{ sys.name }}评价。导入步骤：</p>
       <ol class="steps-list">
-        <li>按模板 <span class="mono">data/templates/制造成熟度评价细则-模板.xlsx</span> 整理细则：每级一行“第 N 级 + 等级定义”，其下逐条填写序号、具体化等级条件、评价支撑信息。</li>
+        <li>按模板 <span class="mono">data/templates/制造成熟度评价细则-模板.xlsx</span> 整理细则：每级一行“第 N 级 + 等级定义”，其下逐条填写序号、审核依据、评价支撑信息。</li>
         <li>在程序目录执行 <span class="mono">python scripts/build_seed.py mrl &lt;细则文件.xlsx&gt;</span>，生成 <span class="mono">data/seed/mrl_rules_seed.csv</span>。</li>
         <li>执行 <span class="mono">python manage.py import_rules</span> 导入系统，刷新本页即可看到全部细则。</li>
       </ol>
@@ -40,7 +43,7 @@
 
   <div class="kpi-row">
     <div class="kpi"><span class="l">等级</span><span class="v">{{ sys.max_level }}<small>级</small></span><span class="d">{{ sys.abbr }} 1 ~ {{ sys.abbr }} {{ sys.max_level }}</span></div>
-    <div class="kpi"><span class="l">细则条目总数</span><span class="v">{{ total_items }}<small>条</small></span><span class="d">具体化等级条件</span></div>
+    <div class="kpi"><span class="l">细则条目总数</span><span class="v">{{ total_items }}<small>条</small></span><span class="d">审核依据</span></div>
     {% if has_tracks %}
     <div class="kpi"><span class="l">硬件细则</span><span class="v">{{ hw_total }}<small>条</small></span><span class="d">设备技术、一般硬件产品技术适用</span></div>
     <div class="kpi"><span class="l">软件细则</span><span class="v">{{ sw_total }}<small>条</small></span><span class="d">设备技术、计算机软件技术适用</span></div>
@@ -60,7 +63,7 @@
       <div class="table-wrap">
         <table class="data">
           <thead>
-            <tr><th class="num" style="width:60px">序号</th>{% if has_tracks %}<th style="width:80px">适用</th>{% endif %}<th>具体化等级条件</th><th style="width:220px">评价支撑信息</th></tr>
+            <tr><th class="num" style="width:60px">序号</th>{% if has_tracks %}<th style="width:80px">适用</th>{% endif %}<th>审核依据</th><th style="width:220px">评价支撑信息参考</th></tr>
           </thead>
           <tbody>
             {% for item in entry.items %}

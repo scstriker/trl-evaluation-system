@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{% if profile %}编辑专家档案{% else %}新增专家{% endif %}{% endblock %}
+{% block header_title %}专家库{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>{% if profile %}编辑专家档案：{{ profile.name }}{% else %}新增专家{% endif %}</h1>
+      <div class="sub">{% if profile %}登录账号 {{ profile.user.username }}。修改会记入审计日志。{% else %}保存后开通专家登录账号，初始密码 Trl@2026，专家会收到一条站内私信。{% endif %}</div>
+    </div>
+    <div class="actions"><a class="btn ghost sm" href="{% if profile %}{% url 'experts:expert_detail' profile.pk %}{% else %}{% url 'experts:expert_list' %}{% endif %}">← 返回</a></div>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert danger">{{ form.non_field_errors|join:"；" }}</div>{% endif %}
+    <div class="card">
+      <div class="card-head"><h2>基本信息</h2></div>
+      <div class="card-body form-grid">
+        <div class="grid-2">
+          {% for field in form %}{% if field.name in "name organization title position specialty username" %}
+          <div class="field">
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.name == "name" or field.name == "organization" or field.name == "specialty" %} *{% endif %}</label>
+            {{ field }}
+            {% if field.help_text %}<div class="hint">{{ field.help_text }}</div>{% endif %}
+            {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+          </div>
+          {% endif %}{% endfor %}
+          <div class="field">
+            <label class="field-label" for="{{ form.tags_text.id_for_label }}">{{ form.tags_text.label }}</label>
+            {{ form.tags_text }}
+            <div class="hint">{{ form.tags_text.help_text }}</div>
+            {% if form.tags_text.errors %}<div class="error">{{ form.tags_text.errors|join:"；" }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="check-grid">
+          <label class="check-line">{{ form.in_service }} 在职（不在职的专家不出现在分配候选中）</label>
+          {% if form.is_active %}<label class="check-line">{{ form.is_active }} 账号启用（停用后不能登录，也不能被分配）</label>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>联系方式</h2><span class="small muted">只对评价机构和专家本人可见</span></div>
+      <div class="card-body grid-2">
+        {% for field in form %}{% if field.name in "phone email website" %}
+        <div class="field">
+          <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+        </div>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>专家主页内容</h2><span class="small muted">填写简介或代表成果后，专家主页显示完整介绍</span></div>
+      <div class="card-body form-grid">
+        {% for field in form %}{% if field.name in "bio research achievements experience" %}
+        <div class="field">
+          <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}<div class="error">{{ field.errors|join:"；" }}</div>{% endif %}
+        </div>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    <div class="flex" style="justify-content:flex-end;margin-top:var(--space-5)">
+      <button class="btn primary" type="submit">{% if profile %}保存档案{% else %}开通账号并保存{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -3,16 +3,23 @@
 系统只做流程门禁与留痕，不做任何自动达标判断：是否通过由管理员人工决定。
 """
 
+import shutil
+from pathlib import Path
+
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.permissions import can_review, is_project_owner
 from apps.audit.models import AuditLog
-from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, LevelReview
+from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, LevelReview, TargetChangeRequest
+from apps.notifications.models import CATEGORY_TODO
+from apps.notifications.services import notify, notify_admins
 from apps.rules.models import RuleItem
-from apps.rules.systems import TRL, get_system
+from apps.rules.systems import MRL, TRL, get_system
 
 # 技术类型 → 适用的技术就绪度细则类别（制造成熟度细则不区分技术类型）
 TECH_TYPE_TRACKS = {
@@ -28,6 +35,8 @@ STATE_SUBMITTED = LevelReview.STATUS_SUBMITTED
 STATE_RETURNED = LevelReview.STATUS_RETURNED
 STATE_PASSED = LevelReview.STATUS_PASSED
 STATE_OUT_OF_SCOPE = "out_of_scope"
+# 已提交的级别交给专家评审期间的状态（与 reviews.services 中的常量一致）
+STATE_EXPERT_REVIEW = "expert_review"
 
 STATE_LABELS = {
     STATE_DRAFT: "填写中",
@@ -36,6 +45,7 @@ STATE_LABELS = {
     STATE_RETURNED: "已退回",
     STATE_PASSED: "已通过",
     STATE_OUT_OF_SCOPE: "超出目标",
+    STATE_EXPERT_REVIEW: "专家评审中",
 }
 
 
@@ -62,8 +72,26 @@ def _log(actor, action, model_name, object_id, object_repr, project, before=None
     )
 
 
+def assessment_link(assessment, level=None, item=None):
+    """站内私信里的跳转链接（站内相对路径）。"""
+    url = reverse("evaluations:assessment_detail", args=[assessment.project_id, assessment.system])
+    params = [f"level={level}"] if level else []
+    if item:
+        params.append(f"item={item}")
+    return f"{url}?{'&'.join(params)}" if params else url
+
+
 def rules_available(system):
     return RuleItem.objects.filter(system=system).exists()
+
+
+def mrl_enabled():
+    """制造成熟度评价是否开放：细则导入前隐藏全部制造成熟度入口，导入后自动开放。"""
+    return rules_available(MRL)
+
+
+def system_enabled(system):
+    return system != MRL or mrl_enabled()
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +104,8 @@ def create_project(project, owner, targets):
     """保存企业申报的项目，并按所选评价类别生成评价条目。targets: {system: target_level}"""
     if not targets:
         raise ValidationError("请至少选择一项评价内容（技术就绪度或制造成熟度）。")
+    if owner is None or not getattr(owner, "pk", None):
+        raise ValidationError("无法确定申报企业账号，请使用企业用户登录后再申报项目。")
     project.owner = owner
     project.save()
     _log(owner, "project.create", "EvaluationProject", project.id, project.name, project, after={"name": project.name})
@@ -87,6 +117,8 @@ def create_project(project, owner, targets):
 @transaction.atomic
 def add_assessment(project, system, target_level, actor):
     sys = get_system(system)
+    if not system_enabled(system):
+        raise ValidationError(f"{sys.name}评价尚未开放。")
     target_level = int(target_level)
     if not 1 <= target_level <= sys.max_level:
         raise ValidationError(f"目标等级必须是 {sys.abbr} 1~{sys.max_level}。")
@@ -188,10 +220,13 @@ def get_level_states(assessment, reviews=None, counts=None):
     reviews = get_reviews(assessment) if reviews is None else reviews
     counts = _level_counts(assessment) if counts is None else counts
     empty = {"total": 0, "unevaluated": 0, "satisfied": 0, "not_satisfied": 0, "not_applicable": 0}
+    from apps.reviews.services import level_overrides
+
+    overrides = level_overrides(assessment)
     states = []
     for level in assessment.sys.levels:
         stats = counts.get(level, empty)
-        state = _review_state(assessment, level, reviews)
+        state = overrides.get(level) or _review_state(assessment, level, reviews)
         if state is None:
             state = STATE_READY if stats["total"] and not stats["unevaluated"] else STATE_DRAFT
         completed = stats["total"] - stats["unevaluated"]
@@ -269,6 +304,11 @@ def get_pass_plan(assessment, reviews=None):
     return levels
 
 
+def ready_for_report(assessment, reviews=None):
+    """能否出具报告：须审核通过至目标等级（自行审核或专家评审终审通过均可）。"""
+    return get_achieved_level(assessment, reviews) >= assessment.target_level
+
+
 def get_submitted_levels(assessment, reviews=None):
     reviews = get_reviews(assessment) if reviews is None else reviews
     return sorted(level for level, review in reviews.items() if review.status == LevelReview.STATUS_SUBMITTED)
@@ -302,8 +342,16 @@ def get_attention_items(assessment, levels):
 def next_step(assessment, for_admin):
     """列表“下一步”提示：(文字, 标签色)。"""
     sys = assessment.sys
+    pending_target = get_pending_target_request(assessment)
+    if for_admin and pending_target:
+        return f"目标等级调整待审核：{sys.abbr} {pending_target.from_level} → {sys.abbr} {pending_target.to_level}", "warning"
     if assessment.status == Assessment.STATUS_REPORTED:
         return ("报告已出具" if for_admin else "报告已出具，可下载"), "success"
+    from apps.reviews.services import round_step
+
+    step = round_step(assessment, for_admin)
+    if step:
+        return step
     reviews = get_reviews(assessment)
     achieved = get_achieved_level(assessment, reviews)
     if achieved >= assessment.target_level:
@@ -367,6 +415,11 @@ def ensure_item_editable(item, purpose="修改"):
         raise ValidationError(f"第 {item.level} 级已提交审核，等待评价机构审核期间不能{purpose}。")
     if state == STATE_PASSED:
         raise ValidationError(f"第 {item.level} 级已审核通过，内容已冻结，不能{purpose}。")
+    from apps.reviews.services import item_lock_reason
+
+    reason = item_lock_reason(item)
+    if reason:
+        raise ValidationError(reason)
 
 
 @transaction.atomic
@@ -391,6 +444,15 @@ def evaluate_check_item(item, actor, data):
 # ---------------------------------------------------------------------------
 # 企业：提交审核
 # ---------------------------------------------------------------------------
+
+
+def _ensure_no_expert_round(assessment):
+    """已提交的级别交给专家评审期间，管理员不能直接通过或退回，须在终审中处理。"""
+    from apps.reviews.services import open_round
+
+    review_round = open_round(assessment)
+    if review_round:
+        raise ValidationError(f"第 {review_round.number} 轮专家评审正在进行，请在“专家评审”中终审后再处理。")
 
 
 @transaction.atomic
@@ -434,6 +496,18 @@ def submit_levels(assessment, actor, up_to):
         assessment.project,
         after={"system": assessment.system, "levels": option["levels"]},
     )
+    project = assessment.project
+    notify_admins(
+        "level.submit",
+        f"{project.applicant}提交了{sys.abbr} 第 {option['levels_text']} 级，待审核",
+        body=f"项目：{project.name}",
+        link=assessment_link(assessment, option["levels"][0]),
+        project=project,
+        category=CATEGORY_TODO,
+    )
+    from apps.reviews.services import on_levels_submitted
+
+    on_levels_submitted(assessment, actor)
     return option["levels"]
 
 
@@ -450,6 +524,7 @@ def _ensure_reviewer(actor):
 @transaction.atomic
 def pass_levels(assessment, actor, up_to):
     _ensure_reviewer(actor)
+    _ensure_no_expert_round(assessment)
     sys = assessment.sys
     try:
         up_to = int(up_to)
@@ -461,7 +536,11 @@ def pass_levels(assessment, actor, up_to):
     levels = [level for level in plan if level <= up_to]
     now = timezone.now()
     LevelReview.objects.filter(assessment=assessment, level__in=levels).update(
-        status=LevelReview.STATUS_PASSED, reviewed_by=actor, reviewed_at=now, comment=""
+        status=LevelReview.STATUS_PASSED,
+        source=LevelReview.SOURCE_DIRECT,
+        reviewed_by=actor,
+        reviewed_at=now,
+        comment="",
     )
     # 逐条审核意见已处理完毕，通过后清空（历史见审计留痕）
     assessment.items.filter(level__in=levels).exclude(review_comment="").update(review_comment="")
@@ -475,12 +554,21 @@ def pass_levels(assessment, actor, up_to):
         assessment.project,
         after={"system": assessment.system, "levels": levels},
     )
+    notify(
+        assessment.project.owner,
+        "level.pass",
+        f"{sys.abbr} 第 {format_levels(levels)} 级已审核通过",
+        body=f"项目：{assessment.project.name}",
+        link=assessment_link(assessment, levels[-1]),
+        project=assessment.project,
+    )
     return levels
 
 
 @transaction.atomic
 def return_levels(assessment, actor, levels, comment):
     _ensure_reviewer(actor)
+    _ensure_no_expert_round(assessment)
     sys = assessment.sys
     comment = (comment or "").strip()
     if not comment:
@@ -499,7 +587,11 @@ def return_levels(assessment, actor, levels, comment):
         raise ValidationError(f"第 {format_levels(invalid)} 级不是已提交或已通过状态，不能退回。")
     now = timezone.now()
     LevelReview.objects.filter(assessment=assessment, level__in=levels).update(
-        status=LevelReview.STATUS_RETURNED, reviewed_by=actor, reviewed_at=now, comment=comment
+        status=LevelReview.STATUS_RETURNED,
+        source=LevelReview.SOURCE_DIRECT,
+        reviewed_by=actor,
+        reviewed_at=now,
+        comment=comment,
     )
     assessment.save(update_fields=["updated_at"])
     _log(
@@ -511,6 +603,15 @@ def return_levels(assessment, actor, levels, comment):
         assessment.project,
         after={"system": assessment.system, "levels": levels, "comment": comment},
     )
+    notify(
+        assessment.project.owner,
+        "level.return",
+        f"{sys.abbr} 第 {format_levels(levels)} 级被退回，请按审核意见修改后重新提交",
+        body=f"项目：{assessment.project.name}\n审核意见：{comment}",
+        link=assessment_link(assessment, levels[0]),
+        project=assessment.project,
+        category=CATEGORY_TODO,
+    )
     return levels
 
 
@@ -518,6 +619,7 @@ def return_levels(assessment, actor, levels, comment):
 def set_review_comment(item, actor, comment):
     _ensure_reviewer(actor)
     assessment = item.assessment
+    _ensure_no_expert_round(assessment)
     state = _review_state(assessment, item.level, get_reviews(assessment))
     if assessment.status != Assessment.STATUS_IN_PROGRESS or state == STATE_PASSED:
         raise ValidationError("该级已审核通过或已出具报告，不能再填写审核意见。")
@@ -546,3 +648,315 @@ def reopen_assessment(assessment, actor):
         after={"status": assessment.status},
     )
     return assessment
+
+
+# ---------------------------------------------------------------------------
+# 目标等级调整：企业申请 → 管理员审核后生效
+# ---------------------------------------------------------------------------
+
+
+def get_pending_target_request(assessment):
+    return (
+        assessment.target_requests.filter(status=TargetChangeRequest.STATUS_PENDING)
+        .select_related("requested_by__enterprise")
+        .first()
+    )
+
+
+def get_last_target_request(assessment):
+    return assessment.target_requests.select_related("reviewed_by").first()
+
+
+def target_level_floor(assessment, reviews=None):
+    """目标等级下限：不能低于已有审核记录（已提交 / 已通过 / 已退回）的最高级。"""
+    reviews = get_reviews(assessment) if reviews is None else reviews
+    return max(reviews.keys(), default=1)
+
+
+def target_options(assessment, reviews=None):
+    """申请弹窗中的可选等级：[(level, 是否可选, 不可选原因)]。"""
+    floor = target_level_floor(assessment, reviews)
+    options = []
+    for level in assessment.sys.levels:
+        if level == assessment.target_level:
+            options.append((level, False, "当前目标"))
+        elif level < floor:
+            options.append((level, False, f"不能低于 {assessment.sys.abbr} {floor}"))
+        else:
+            options.append((level, True, ""))
+    return options
+
+
+def _validate_new_target(assessment, to_level):
+    sys = assessment.sys
+    if to_level == assessment.target_level:
+        raise ValidationError(f"新目标等级与当前目标 {sys.abbr} {assessment.target_level} 相同。")
+    if not 1 <= to_level <= sys.max_level:
+        raise ValidationError(f"目标等级必须是 {sys.abbr} 1~{sys.max_level}。")
+    floor = target_level_floor(assessment)
+    if to_level < floor:
+        raise ValidationError(f"第 {floor} 级已提交或审核，目标等级不能低于 {sys.abbr} {floor}。")
+
+
+@transaction.atomic
+def request_target_change(assessment, actor, to_level, reason):
+    if not is_project_owner(actor, assessment.project):
+        raise PermissionDenied("只有申报企业可以申请调整目标等级。")
+    sys = assessment.sys
+    try:
+        to_level = int(to_level)
+    except (TypeError, ValueError):
+        raise ValidationError("请选择新的目标等级。")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationError("请填写调整理由。")
+    if get_pending_target_request(assessment):
+        raise ValidationError("已有一条目标等级调整申请正在审核中，请等待审核结果。")
+    _validate_new_target(assessment, to_level)
+    request = TargetChangeRequest.objects.create(
+        assessment=assessment, from_level=assessment.target_level, to_level=to_level, reason=reason, requested_by=actor
+    )
+    _log(
+        actor,
+        "target.request",
+        "TargetChangeRequest",
+        request.id,
+        f"{sys.abbr} {request.from_level} → {sys.abbr} {to_level}",
+        assessment.project,
+        after={"system": assessment.system, "from": request.from_level, "to": to_level, "reason": reason},
+    )
+    notify_admins(
+        "target.request",
+        f"{assessment.project.applicant}申请把目标等级从 {sys.abbr} {request.from_level} 调整为 {sys.abbr} {to_level}",
+        body=f"项目：{assessment.project.name}\n调整理由：{reason}",
+        link=assessment_link(assessment),
+        project=assessment.project,
+        category=CATEGORY_TODO,
+    )
+    return request
+
+
+@transaction.atomic
+def approve_target_change(request, actor):
+    _ensure_reviewer(actor)
+    if request.status != TargetChangeRequest.STATUS_PENDING:
+        raise ValidationError("该申请已处理，不能重复审核。")
+    assessment = request.assessment
+    sys = assessment.sys
+    _validate_new_target(assessment, request.to_level)
+    before = {"target_level": assessment.target_level, "status": assessment.status}
+    assessment.target_level = request.to_level
+    # 已出报告的评价调高目标后回到“评价中”，已生成的报告保留
+    if assessment.status == Assessment.STATUS_REPORTED and request.to_level > request.from_level:
+        assessment.status = Assessment.STATUS_IN_PROGRESS
+    assessment.save(update_fields=["target_level", "status", "updated_at"])
+    request.status = TargetChangeRequest.STATUS_APPROVED
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+    _log(
+        actor,
+        "target.approve",
+        "TargetChangeRequest",
+        request.id,
+        f"{sys.abbr} {request.from_level} → {sys.abbr} {request.to_level}",
+        assessment.project,
+        before=before,
+        after={"target_level": assessment.target_level, "status": assessment.status},
+    )
+    notify(
+        assessment.project.owner,
+        "target.approve",
+        f"目标等级调整已通过：{sys.abbr} {request.from_level} → {sys.abbr} {request.to_level}",
+        body=f"项目：{assessment.project.name}",
+        link=assessment_link(assessment),
+        project=assessment.project,
+    )
+    return assessment
+
+
+@transaction.atomic
+def reject_target_change(request, actor, reason):
+    _ensure_reviewer(actor)
+    if request.status != TargetChangeRequest.STATUS_PENDING:
+        raise ValidationError("该申请已处理，不能重复审核。")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationError("驳回时必须填写原因，企业会看到该原因。")
+    sys = request.assessment.sys
+    request.status = TargetChangeRequest.STATUS_REJECTED
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.reject_reason = reason
+    request.save(update_fields=["status", "reviewed_by", "reviewed_at", "reject_reason"])
+    _log(
+        actor,
+        "target.reject",
+        "TargetChangeRequest",
+        request.id,
+        f"{sys.abbr} {request.from_level} → {sys.abbr} {request.to_level}",
+        request.assessment.project,
+        after={"reason": reason},
+    )
+    notify(
+        request.assessment.project.owner,
+        "target.reject",
+        f"目标等级调整申请被驳回（{sys.abbr} {request.from_level} → {sys.abbr} {request.to_level}）",
+        body=f"项目：{request.assessment.project.name}\n驳回原因：{reason}",
+        link=assessment_link(request.assessment),
+        project=request.assessment.project,
+    )
+    return request
+
+
+# ---------------------------------------------------------------------------
+# 管理员修改“满足情况说明 / 评价支撑信息”
+# ---------------------------------------------------------------------------
+
+ADMIN_EDITABLE_STATES = (STATE_SUBMITTED, STATE_PASSED, STATE_RETURNED)
+
+
+def can_admin_edit_text(assessment, level, reviews=None):
+    if assessment.status != Assessment.STATUS_IN_PROGRESS:
+        return False
+    reviews = get_reviews(assessment) if reviews is None else reviews
+    return _review_state(assessment, level, reviews) in ADMIN_EDITABLE_STATES
+
+
+@transaction.atomic
+def admin_edit_item_text(item, actor, statement, support_info):
+    _ensure_reviewer(actor)
+    if not can_admin_edit_text(item.assessment, item.level):
+        raise ValidationError("只能修改已提交、已通过或已退回级别的条目；已出报告的评价需先重新开放。")
+    statement = (statement or "").strip()
+    support_info = (support_info or "").strip()
+    if item.result != CheckItem.RESULT_UNEVALUATED and not statement:
+        raise ValidationError("满足情况说明不能为空。")
+    before = {"statement": item.statement, "support_info": item.support_info}
+    after = {"statement": statement, "support_info": support_info}
+    if before == after:
+        return item
+    item.statement = statement
+    item.support_info = support_info
+    item.save(update_fields=["statement", "support_info", "updated_at"])
+    _log(actor, "item.admin_edit", "CheckItem", item.id, item.code, item.assessment.project, before, after)
+    notify(
+        item.assessment.project.owner,
+        "item.admin_edit",
+        f"评价机构修改了条目 {item.code} 的满足情况说明或评价支撑信息",
+        body=f"项目：{item.assessment.project.name}。修改已留痕，可在该条目的修改记录中查看。",
+        link=assessment_link(item.assessment, item.level, item.id),
+        project=item.assessment.project,
+    )
+    return item
+
+
+# ---------------------------------------------------------------------------
+# 项目删除：进入回收站（软删除），管理员可恢复或彻底删除
+# ---------------------------------------------------------------------------
+
+
+def enterprise_delete_blockers(project):
+    """企业删除项目的前提：从未提交审核。返回不能删除的原因列表。"""
+    from apps.reviews.models import ReviewRound
+
+    reasons = []
+    if LevelReview.objects.filter(assessment__project=project).exists():
+        reasons.append("项目已提交过审核")
+    if ReviewRound.objects.filter(assessment__project=project).exists():
+        reasons.append("项目已进入专家评审")
+    return reasons
+
+
+def can_delete_project(user, project):
+    if project.is_deleted:
+        return False
+    if can_review(user):
+        return True
+    return is_project_owner(user, project) and not enterprise_delete_blockers(project)
+
+
+@transaction.atomic
+def delete_project(project, actor, reason=""):
+    reason = (reason or "").strip()
+    if project.is_deleted:
+        raise ValidationError("该项目已在回收站中。")
+    admin = can_review(actor)
+    if admin:
+        if not reason:
+            raise ValidationError("管理员删除项目时必须填写理由，企业会看到该理由。")
+    elif is_project_owner(actor, project):
+        blockers = enterprise_delete_blockers(project)
+        if blockers:
+            raise ValidationError(f"{'；'.join(blockers)}，不能删除。如确需删除，请联系评价机构。")
+    else:
+        raise PermissionDenied("只有申报企业或评价机构管理员可以删除项目。")
+    project.deleted_at = timezone.now()
+    project.deleted_by = actor
+    project.delete_reason = reason
+    project.save(update_fields=["deleted_at", "deleted_by", "delete_reason"])
+    _log(actor, "project.delete", "EvaluationProject", project.id, project.name, project, after={"reason": reason})
+    from apps.reviews.services import on_project_deleted
+
+    on_project_deleted(project, actor)
+    if admin:
+        notify(
+            project.owner,
+            "project.delete",
+            f"评价项目「{project.name}」已被评价机构删除",
+            body=f"删除理由：{reason}",
+            project=project,
+        )
+    return project
+
+
+def _ensure_in_recycle_bin(project, actor):
+    _ensure_reviewer(actor)
+    if not project.is_deleted:
+        raise ValidationError("该项目不在回收站中。")
+
+
+@transaction.atomic
+def restore_project(project, actor):
+    _ensure_in_recycle_bin(project, actor)
+    before = {"deleted_at": project.deleted_at.isoformat(), "reason": project.delete_reason}
+    project.deleted_at = None
+    project.deleted_by = None
+    project.delete_reason = ""
+    project.save(update_fields=["deleted_at", "deleted_by", "delete_reason"])
+    _log(actor, "project.restore", "EvaluationProject", project.id, project.name, project, before=before)
+    notify(
+        project.owner,
+        "project.restore",
+        f"评价项目「{project.name}」已恢复",
+        link=reverse("evaluations:project_home", args=[project.id]),
+        project=project,
+    )
+    return project
+
+
+def project_media_dirs(project):
+    root = Path(settings.MEDIA_ROOT)
+    return [
+        root / "evidence" / str(project.id),
+        root / "reports" / str(project.id),
+        root / "enterprise" / str(project.id),
+    ]
+
+
+@transaction.atomic
+def purge_project(project, actor):
+    """彻底删除：删除项目及其评价、佐证、报告记录，事务提交后清理磁盘文件。审计日志保留项目名称。"""
+    _ensure_in_recycle_bin(project, actor)
+    _log(
+        actor,
+        "project.purge",
+        "EvaluationProject",
+        project.id,
+        project.name,
+        project,
+        after={"applicant": project.applicant, "deleted_at": project.deleted_at.isoformat()},
+    )
+    dirs = project_media_dirs(project)
+    project.delete()
+    transaction.on_commit(lambda: [shutil.rmtree(path, ignore_errors=True) for path in dirs])

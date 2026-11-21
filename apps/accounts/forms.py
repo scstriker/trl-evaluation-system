@@ -6,7 +6,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
 
 from apps.accounts import captcha
-from apps.accounts.models import EnterpriseProfile
+from apps.accounts.models import EnterpriseProfile, SystemConfig
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,19}$")
 PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
@@ -134,3 +134,76 @@ class ResetPasswordForm(forms.Form):
         password = self.cleaned_data["new_password"]
         validate_password_strength(password)
         return password
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+SEAL_MAX_BYTES = 1024 * 1024
+SEAL_MAX_PIXELS = 4000
+
+
+def validate_seal_png(payload: bytes):
+    """校验印章可被完整解码为 PNG，避免仅文件头合法导致报告生成时崩溃。"""
+    from io import BytesIO
+
+    from docx import Document
+    from docx.shared import Mm
+
+    if not payload.startswith(PNG_SIGNATURE):
+        raise forms.ValidationError("印章图片须为 PNG 格式（建议透明背景）。")
+    try:
+        document = Document()
+        document.add_paragraph().add_run().add_picture(BytesIO(payload), width=Mm(10))
+    except Exception as exc:
+        raise forms.ValidationError("印章图片无法解码，请上传完整可用的 PNG（建议透明背景）。") from exc
+    try:
+        from PIL import Image
+
+        image = Image.open(BytesIO(payload))
+        image.load()
+        width, height = image.size
+        if width > SEAL_MAX_PIXELS or height > SEAL_MAX_PIXELS:
+            raise forms.ValidationError(f"印章图片边长不能超过 {SEAL_MAX_PIXELS} 像素。")
+    except forms.ValidationError:
+        raise
+    except ImportError:
+        pass
+    except Exception as exc:
+        raise forms.ValidationError("印章图片无法解码，请上传完整可用的 PNG（建议透明背景）。") from exc
+
+
+class SystemConfigForm(forms.ModelForm):
+    seal_upload = forms.FileField(label="上传印章图片", required=False)
+    clear_seal = forms.BooleanField(label="移除当前印章图片", required=False)
+
+    class Meta:
+        model = SystemConfig
+        fields = ["expert_review_days", "rectify_days", "expert_fee_default"]
+
+    def clean_expert_review_days(self):
+        days = self.cleaned_data["expert_review_days"]
+        if not 1 <= days <= 60:
+            raise forms.ValidationError("专家评审期限须在 1～60 天之间。")
+        return days
+
+    def clean_rectify_days(self):
+        days = self.cleaned_data["rectify_days"]
+        if not 1 <= days <= 90:
+            raise forms.ValidationError("整改期限须在 1～90 天之间。")
+        return days
+
+    def clean_expert_fee_default(self):
+        fee = self.cleaned_data["expert_fee_default"]
+        if fee < 0:
+            raise forms.ValidationError("劳务费不能为负数。")
+        return fee
+
+    def clean_seal_upload(self):
+        upload = self.cleaned_data.get("seal_upload")
+        if not upload:
+            return upload
+        if upload.size > SEAL_MAX_BYTES:
+            raise forms.ValidationError("印章图片不能超过 1MB。")
+        payload = upload.read()
+        upload.seek(0)
+        validate_seal_png(payload)
+        return upload

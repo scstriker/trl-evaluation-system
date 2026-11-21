@@ -9,6 +9,13 @@ from apps.rules.systems import SYSTEM_CHOICES, TRL, get_system
 DEFAULT_ISSUER = "机械工业仪器仪表综合技术经济研究所"
 
 
+class ActiveProjectManager(models.Manager):
+    """默认管理器只取未删除的项目；回收站与彻底删除使用 all_objects。"""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class EvaluationProject(models.Model):
     """技术项目：企业申报的评价对象，下挂技术就绪度 / 制造成熟度两类评价。"""
 
@@ -25,8 +32,11 @@ class EvaluationProject(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField("技术项目名称", max_length=255)
     applicant = models.CharField("委托（受评）单位", max_length=255)
-    issuer = models.CharField("评价出具单位", max_length=255, default=DEFAULT_ISSUER)
+    issuer = models.CharField("评价报告出具单位", max_length=255, default=DEFAULT_ISSUER)
     domain = models.CharField("应用领域", max_length=255, blank=True)
+    specialty = models.ForeignKey(
+        "rules.Specialty", null=True, blank=True, on_delete=models.SET_NULL, related_name="projects", verbose_name="所属技术领域"
+    )
     tech_type = models.CharField("技术类型", max_length=32, choices=TECH_TYPE_CHOICES)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="projects")
     report_no = models.CharField("报告编号", max_length=64, blank=True)
@@ -34,12 +44,26 @@ class EvaluationProject(models.Model):
     remark = models.TextField("备注", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # 删除即进入回收站（软删除），管理员可恢复或彻底删除
+    deleted_at = models.DateTimeField("删除时间", null=True, blank=True, db_index=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="deleted_projects"
+    )
+    delete_reason = models.CharField("删除理由", max_length=255, blank=True)
+
+    objects = ActiveProjectManager()
+    all_objects = models.Manager()
 
     class Meta:
         ordering = ["-updated_at", "-created_at"]
+        base_manager_name = "all_objects"
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
 
     def get_assessment(self, system):
         return next((a for a in self.assessments.all() if a.system == system), None)
@@ -84,6 +108,7 @@ class Assessment(models.Model):
         return self.system == TRL
 
 
+
 class CheckItem(models.Model):
     """评价条目：项目创建时从细则库复制，此后与细则库的修订互不影响。"""
 
@@ -111,12 +136,12 @@ class CheckItem(models.Model):
     level = models.PositiveSmallIntegerField()
     track = models.CharField(max_length=8, choices=TRACK_CHOICES)
     seq = models.PositiveSmallIntegerField()
-    name = models.TextField("具体化等级条件")
-    evidence = models.CharField("评价支撑信息要求", max_length=255)
+    name = models.TextField("审核依据")
+    evidence = models.CharField("评价支撑信息参考", max_length=255)
 
     result = models.CharField("自评结论", max_length=32, choices=RESULT_CHOICES, default=RESULT_UNEVALUATED)
     statement = models.TextField("满足情况说明", blank=True)
-    support_info = models.TextField("评价支撑信息", blank=True)
+    support_info = models.TextField("相关文件", blank=True)
     review_comment = models.TextField("审核意见", blank=True)
 
     evaluated_by = models.ForeignKey(
@@ -181,6 +206,10 @@ class LevelReview(models.Model):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField("审核意见", blank=True)
+    # 来源：管理员自行审核为 direct；指派专家评审后由终审结果写入的为 expert
+    SOURCE_DIRECT = "direct"
+    SOURCE_EXPERT = "expert"
+    source = models.CharField(max_length=8, default=SOURCE_DIRECT)
 
     class Meta:
         constraints = [
@@ -193,18 +222,62 @@ class LevelReview(models.Model):
 
 
 class EvaluationTeamMember(models.Model):
-    """报告“评价人员”表：由管理员按项目填写。"""
+    """报告“评价人员”表：自评估工作组由企业填写，第三方评价组由评价机构填写。"""
+
+    GROUP_SELF = "self"
+    GROUP_THIRD = "third"
+    GROUP_CHOICES = [
+        (GROUP_SELF, "自评估工作组"),
+        (GROUP_THIRD, "第三方评价组"),
+    ]
 
     project = models.ForeignKey(EvaluationProject, on_delete=models.CASCADE, related_name="team_members")
+    group = models.CharField("所属组", max_length=8, choices=GROUP_CHOICES, default=GROUP_THIRD)
     order = models.PositiveSmallIntegerField(default=0)
     role = models.CharField("角色", max_length=32)
     name = models.CharField("姓名", max_length=64)
-    title = models.CharField("职称", max_length=64, blank=True)
+    title = models.CharField("职务 / 职称", max_length=64, blank=True)
     specialty = models.CharField("专业及特长", max_length=128, blank=True)
     org = models.CharField("工作单位", max_length=255, blank=True)
 
     class Meta:
-        ordering = ["project", "order", "id"]
+        ordering = ["project", "group", "order", "id"]
 
     def __str__(self):
-        return f"{self.role} {self.name}"
+        return f"{self.get_group_display()} {self.role} {self.name}"
+
+
+class TargetChangeRequest(models.Model):
+    """目标等级调整申请：企业提出，评价机构审核通过后生效。"""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "待审核"),
+        (STATUS_APPROVED, "已通过"),
+        (STATUS_REJECTED, "已驳回"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assessment = models.ForeignKey(Assessment, on_delete=models.CASCADE, related_name="target_requests")
+    from_level = models.PositiveSmallIntegerField("原目标等级")
+    to_level = models.PositiveSmallIntegerField("申请目标等级")
+    reason = models.TextField("调整理由")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="target_requests"
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="reviewed_target_requests"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.CharField("驳回原因", max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        abbr = self.assessment.sys.abbr
+        return f"{self.assessment} {abbr} {self.from_level} → {abbr} {self.to_level}"
