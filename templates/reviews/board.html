@@ -7,12 +7,17 @@
   <div class="page-head">
     <div>
       <h1>专家评审</h1>
-      <div class="sub">对企业提交的级别指派专家评审后出现在这里。每轮固定 3 位专家，专家间互不可见；三份意见齐全后由评价机构逐条终审，意见不一致的条目须写裁定理由。</div>
     </div>
-    <div class="actions"><a class="btn secondary sm" href="{% url 'experts:expert_list' %}">专家库</a></div>
+    <div class="actions page-toolbar" style="margin:0">
+      <a class="btn secondary sm" href="{% url 'experts:expert_list' %}">专家库</a>
+    </div>
   </div>
+  <details class="disclosure">
+    <summary>评审规则说明</summary>
+    <p class="mt-0 mb-0">对企业提交的级别指派专家评审后出现在这里。每轮固定 3 位专家，专家间互不可见；三份意见齐全后由评价机构逐条终审，意见不一致的条目须写裁定理由。</p>
+  </details>
 
-  <div class="kpi-row">
+  <div class="kpi-row page-section">
     {% for status, label, rounds in sections %}
     <div class="kpi {% if rounds and status == 'ruling' %}hi{% endif %}"><span class="l">{{ label }}</span><span class="v">{{ rounds|length }}<small>个</small></span>
       <span class="d">{% if status == 'assigning' %}需要分配专家{% elif status == 'reviewing' %}等待专家提交意见{% elif status == 'ruling' %}意见已齐，等待终审{% elif status == 'rectifying' %}等待企业整改后重新提交{% else %}本轮已结束{% endif %}</span></div>
@@ -21,10 +26,10 @@
 
   {% for status, label, rounds in sections %}
   {% if rounds %}
-  <div class="card">
+  <div class="card page-section">
     <div class="card-head"><h2>{{ label }}</h2><span class="small muted">{{ rounds|length }} 个</span></div>
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead><tr><th>技术项目</th><th>评价 · 轮次</th><th>专家组</th><th class="nowrap">时间</th><th class="nowrap">操作</th></tr></thead>
         <tbody>
           {% for r in rounds %}
@@ -33,7 +38,11 @@
             <td><strong>{{ project.name }}</strong><div class="small muted">{{ project.applicant }}{% if project.specialty %} · {{ project.specialty.name }}{% endif %}</div></td>
             <td class="nowrap">{{ r.assessment.sys.abbr }} · 第 {{ r.number }} 轮<div class="small muted">{{ r.items.count }} 条</div></td>
             <td>
-              {% for a in r.active_list %}<span class="tag {% if a.status == 'submitted' %}success{% elif a.is_overdue %}warning{% else %}neutral{% endif %}">{{ a.expert.expert_profile.name }}{% if a.is_overdue %} · 逾期 {{ a.overdue_days }} 天{% elif a.status == 'invited' %} · 待接受{% endif %}</span> {% empty %}<span class="muted small">尚未分配</span>{% endfor %}
+              <div class="expert-dots">
+                {% for a in r.active_list %}
+                <span class="expert-dot {% if a.status == 'submitted' %}ok{% elif a.is_overdue %}warn{% else %}muted{% endif %}" title="{{ a.expert.expert_profile.name }} · {% if a.is_overdue %}逾期 {{ a.overdue_days }} 天{% else %}{{ a.get_status_display }}{% endif %}">{{ a.expert.expert_profile.name }}</span>
+                {% empty %}<span class="muted small">尚未分配</span>{% endfor %}
+              </div>
               {% if r.status == 'reviewing' %}<div class="small muted" style="margin-top:4px">已提交 {{ r.done }}/3{% if r.overdue %}，{{ r.overdue }} 位逾期{% endif %}</div>{% endif %}
             </td>
             <td class="nowrap small">

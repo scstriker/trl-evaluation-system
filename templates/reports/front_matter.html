@@ -7,10 +7,14 @@
 <div class="page">
   {% include "evaluations/_project_head.html" with tab="report" %}
 
-  <div class="alert info">
-    报告按评价机构的固定模板生成：封面、扉页和第 1～3 章是前置信息，在这里逐节填写；第 4 章起的评价准则、等级评价、总结和附录由系统按审核结果自动拼接。
-    每节可以写多段，换行即分段。留空的小节在报告中只保留标题；2.1、2.3、2.4 和 1.2.1 留空时使用系统生成的文字。
+  <div class="status-summary">
+    <span class="tag info">前置信息</span>
+    <span class="hint">封面 / 扉页 / 第 1～3 章；第 4 章起由系统拼接</span>
   </div>
+  <details class="disclosure">
+    <summary>填写规则</summary>
+    <p class="mt-0 mb-0">报告按评价机构的固定模板生成：封面、扉页和第 1～3 章在这里逐节填写；第 4 章起的评价准则、等级评价、总结和附录由系统按审核结果自动拼接。每节可以写多段，换行即分段。留空的小节在报告中只保留标题；2.1、2.3、2.4 和 1.2.1 留空时使用系统生成的文字。</p>
+  </details>
 
   <form method="post" novalidate data-dirty-guard>
     {% csrf_token %}<input type="hidden" name="type" value="{{ report_type }}">

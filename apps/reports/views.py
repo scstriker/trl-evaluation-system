@@ -73,6 +73,23 @@ def report_preview(request, project_id):
     print_allowed = admin or reports.exists()
 
     info_form = ProjectInfoForm(instance=project, admin=admin)
+    enterprise_by_kind = enterprise_docs.latest_enterprise_files_by_kind(project)
+    kind_labels = dict(EnterpriseProjectFile.KIND_CHOICES)
+    enterprise_kinds = (
+        EnterpriseProjectFile.KIND_OVERVIEW,
+        EnterpriseProjectFile.KIND_WBST,
+        EnterpriseProjectFile.KIND_SUPPORT,
+    )
+    enterprise_doc_rows = [
+        {
+            "kind": kind,
+            "label": kind_labels[kind],
+            "upload": enterprise_by_kind.get(kind),
+        }
+        for kind in enterprise_kinds
+    ]
+    enterprise_uploaded_count = sum(1 for kind in enterprise_kinds if enterprise_by_kind.get(kind))
+    enterprise_upload_total = 3
     return render(
         request,
         "reports/report_preview.html",
@@ -104,14 +121,9 @@ def report_preview(request, project_id):
             "assessment_tabs": {a.system for a in assessments},
             "pdf_tool": PDF_LABELS.get(detect_converter()) if admin else "",
             "seal_ready": bool(SystemConfig.get().seal_image),
-            "enterprise_doc_rows": [
-                {
-                    "kind": kind,
-                    "label": label,
-                    "upload": enterprise_docs.latest_enterprise_files_by_kind(project).get(kind),
-                }
-                for kind, label in EnterpriseProjectFile.KIND_CHOICES
-            ],
+            "enterprise_doc_rows": enterprise_doc_rows,
+            "enterprise_uploaded_count": enterprise_uploaded_count,
+            "enterprise_upload_total": enterprise_upload_total,
         },
     )
 

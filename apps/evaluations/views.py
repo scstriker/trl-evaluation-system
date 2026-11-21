@@ -309,6 +309,14 @@ def assessment_detail(request, project_id, system):
         and current_state["state"] in (LevelReview.STATUS_SUBMITTED, LevelReview.STATUS_RETURNED)
     )
 
+    expert_panel = review_services.panel_context(assessment, request.user, admin, owner)
+    review_round = expert_panel["round"]
+    show_returned_alert = bool(
+        owner
+        and returned_reviews
+        and (not review_round or review_round.status != "rectifying")
+    )
+
     return render(
         request,
         "evaluations/assessment_detail.html",
@@ -338,7 +346,8 @@ def assessment_detail(request, project_id, system):
             "returnable": returnable,
             "resubmitted_reviews": [reviews[level] for level in submitted_levels if reviews[level].comment],
             "ready_for_report": services.ready_for_report(assessment, reviews),
-            "expert_panel": review_services.panel_context(assessment, request.user, admin, owner),
+            "expert_panel": expert_panel,
+            "show_returned_alert": show_returned_alert,
             "expert_round": review_services.open_round(assessment),
             "reopen_item": request.GET.get("item", ""),
             "open_modal": open_modal,

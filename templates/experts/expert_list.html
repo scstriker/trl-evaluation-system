@@ -7,9 +7,8 @@
   <div class="page-head">
     <div>
       <h1>专家库</h1>
-      <div class="sub">评审专家的档案与账号。分配专家时按技术领域筛选；点击姓名查看专家主页。专家信息只对评价机构和专家本人可见。</div>
     </div>
-    <div class="actions">
+    <div class="actions page-toolbar">
       <a class="btn ghost" href="{% url 'experts:fee_list' %}">劳务记录</a>
       <button class="btn secondary" type="button" data-modal-open="import-modal">
         <svg class="icon" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2zM12 11v6M9 14l3-3l3 3"/></svg>
@@ -22,6 +21,11 @@
     </div>
   </div>
 
+  <div class="page-lead">
+    <p>评审专家的档案与账号。分配专家时按技术领域筛选；点击姓名查看专家主页。专家信息只对评价机构和专家本人可见。</p>
+  </div>
+
+  <div class="page-section">
   <div class="filter-tabs" aria-label="技术领域">
     <a href="?{% if q %}q={{ q|urlencode }}{% endif %}" {% if not specialty_code %}aria-current="true"{% endif %}>全部领域 <span>{{ total }}</span></a>
     {% for s in specialties %}
@@ -29,18 +33,23 @@
     {% endfor %}
   </div>
 
-  <div class="card">
-    <div class="card-head">
-      <h2>评审专家{% if sample_count %} <span class="small muted" style="font-weight:400">其中 {{ sample_count }} 位为样例数据（姓名、单位均为虚构），导入真实名单后可停用</span>{% endif %}</h2>
-      <form method="get" class="flex" style="gap:8px">
-        {% if specialty_code %}<input type="hidden" name="specialty" value="{{ specialty_code }}">{% endif %}
-        <input class="input" type="text" name="q" value="{{ q }}" placeholder="姓名、单位、职称或专家标识" style="width:260px;height:32px;padding:4px 10px;font-size:13px">
-        <button class="btn secondary sm" type="submit">搜索</button>
-      </form>
+  <div class="page-toolbar">
+    <form method="get" class="flex">
+      {% if specialty_code %}<input type="hidden" name="specialty" value="{{ specialty_code }}">{% endif %}
+      <input class="input" type="text" name="q" value="{{ q }}" placeholder="姓名、单位、职称或专家标识">
+      <button class="btn secondary sm" type="submit">搜索</button>
+    </form>
+  </div>
+  </div>
+
+  <div class="card page-section">
+    <div class="card-head{% if sample_count %} card-head--stack{% endif %}">
+      <h2>评审专家</h2>
+      {% if sample_count %}<p class="card-desc">其中 {{ sample_count }} 位为样例数据（姓名、单位均为虚构），导入真实名单后可停用</p>{% endif %}
     </div>
     {% if experts %}
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead><tr><th>姓名</th><th>职称 / 职务</th><th>工作单位</th><th>专业领域</th><th>专家标识</th><th>联系方式</th><th>状态</th><th class="nowrap">操作</th></tr></thead>
         <tbody>
           {% for e in experts %}

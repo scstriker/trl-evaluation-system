@@ -33,28 +33,35 @@
       {% endif %}
 
     {% elif r.status == 'rectifying' %}
-      <div class="alert warning mb-0">
-        <strong>第 {{ r.number }} 轮专家评审终审：{{ p.fails|length }} 条需整改，{% if is_admin %}整改期限 {{ r.rectify_due_at|date:"Y-m-d H:i" }}。{% else %}请于 {{ r.rectify_due_at|date:"Y-m-d H:i" }} 前修改后重新提交审核。{% endif %}</strong>
+      <div class="status-summary">
+        <span class="tag warning">{{ p.fails|length }} 条需整改</span>
+        <span>截止 {{ r.rectify_due_at|date:"Y-m-d H:i" }}</span>
         {% if r.rectify_overdue %}<span class="tag warning">已逾期</span>{% endif %}
-        {% if r.feedback_summary %}<div style="margin-top:6px">终审意见：{{ r.feedback_summary }}</div>{% endif %}
-        {% if is_admin %}
-        <div class="small" style="margin-top:6px">这些条目所在的级别已退回企业。企业修改后重新提交审核；退回的级别全部重新提交后，可以再决定自行审核或请专家复评。</div>
-        {% else %}
-        <div class="small" style="margin-top:6px">这些条目所在的级别已退回，可以修改和补充佐证；同一级别中已通过专家评审的条目保持冻结。改完后在“逐级进度”中照常“提交审核”。</div>
-        {% endif %}
+        {% if is_owner %}<span class="hint">改完后在「逐级进度」中提交审核</span>{% endif %}
       </div>
-      <table class="data" style="margin-top:12px">
-        <thead><tr><th class="nowrap">条目</th><th>整改要求</th><th class="nowrap">操作</th></tr></thead>
-        <tbody>
-          {% for ri in p.fails %}
-          <tr>
-            <td class="nowrap mono">{{ ri.check_item.code }}</td>
-            <td class="prewrap">{{ ri.feedback }}</td>
-            <td class="nowrap"><a class="btn ghost sm" href="?level={{ ri.check_item.level }}&item={{ ri.check_item_id }}">{% if is_owner %}去修改{% else %}查看{% endif %}</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% if r.feedback_summary %}<p class="small muted mt-0">终审意见：{{ r.feedback_summary }}</p>{% endif %}
+      {% if is_admin %}
+      <details class="disclosure">
+        <summary>整改流程说明</summary>
+        <p class="mt-0 mb-0">这些条目所在的级别已退回企业。企业修改后重新提交审核；退回的级别全部重新提交后，可以再决定自行审核或请专家复评。</p>
+      </details>
+      {% else %}
+      <p class="small muted mt-0">同一级别中已通过专家评审的条目保持冻结；需整改条目可修改并补充佐证。</p>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="data data-table--compact rectify-table">
+          <thead><tr><th>条目</th><th>整改要求</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for ri in p.fails %}
+            <tr>
+              <td class="mono">{{ ri.check_item.code }}</td>
+              <td class="prewrap">{{ ri.feedback }}</td>
+              <td><a class="btn ghost sm" href="?level={{ ri.check_item.level }}&item={{ ri.check_item_id }}">{% if is_owner %}去修改{% else %}查看{% endif %}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
     {% else %}
       <p class="mt-0 mb-0">

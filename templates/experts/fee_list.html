@@ -8,14 +8,17 @@
   <div class="page-head">
     <div>
       <h1>专家劳务记录</h1>
-      <div class="sub">专家每提交一轮评审意见，系统生成一条记录，金额取“系统设置”中的默认劳务费。结算前可以修改金额和备注，标记结算后专家会收到站内私信。</div>
     </div>
-    <div class="actions">
+    <div class="actions page-toolbar" style="margin:0">
       <a class="btn secondary sm" href="{% url 'experts:fee_export' 'xlsx' %}?{{ query }}">导出 Excel</a>
       <a class="btn ghost sm" href="{% url 'experts:fee_export' 'csv' %}?{{ query }}">导出 CSV</a>
       <a class="btn ghost sm" href="{% url 'experts:expert_list' %}">← 返回专家库</a>
     </div>
   </div>
+  <details class="disclosure">
+    <summary>计费与结算说明</summary>
+    <p class="mt-0 mb-0">专家每提交一轮评审意见，系统生成一条记录，金额取“系统设置”中的默认劳务费。结算前可以修改金额和备注，标记结算后专家会收到站内私信。</p>
+  </details>
 
   <div class="kpi-row">
     <div class="kpi"><span class="l">劳务记录</span><span class="v">{{ totals.count }}<small>条</small></span><span class="d">未结算 {{ totals.unsettled_count }} 条</span></div>

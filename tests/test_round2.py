@@ -223,6 +223,37 @@ def test_direct_generate_closes_pending_request(enterprise, admin_user):
     assert req.status == ReportRequest.STATUS_APPROVED and req.report == record
 
 
+def test_enterprise_report_preview_materials(client, enterprise, admin_user):
+    project = _ready_project(enterprise, admin_user, target=1)
+    url = f"/reports/projects/{project.id}/"
+    client.force_login(enterprise)
+    page = client.get(url).content.decode()
+    assert "page-hero" in page and "upload-card" in page
+    materials = page[page.index('class="upload-card"') :]
+    assert (
+        materials.index('upload-card__title">项目概况')
+        < materials.index("附录A WBST")
+        < materials.index('upload-card__title">评价支撑信息')
+    )
+
+    client.force_login(admin_user)
+    admin_page = client.get(url).content.decode()
+    assert "upload-card" in admin_page
+    admin_materials = admin_page[admin_page.index('class="upload-card"') :]
+    assert (
+        admin_materials.index('upload-card__title">项目概况')
+        < admin_materials.index("附录A WBST")
+        < admin_materials.index('upload-card__title">评价支撑信息')
+    )
+
+
+def test_enterprise_report_preview_blockers(client, enterprise, admin_user):
+    project = _ready_project(enterprise, admin_user, target=1, groups=(), seed_enterprise=False)
+    client.force_login(enterprise)
+    page = client.get(f"/reports/projects/{project.id}/").content.decode()
+    assert "checklist--blockers" in page and "page-hero" in page
+
+
 def test_export_request_pages(client, enterprise, admin_user):
     project = _ready_project(enterprise, admin_user, target=1)
     url = f"/reports/projects/{project.id}/"
@@ -320,6 +351,13 @@ def test_raising_target_after_report_reopens_assessment(enterprise, admin_user):
     assert project.reports.count() == 1
 
 
+def test_assessment_detail_kpi_before_alerts(client, enterprise):
+    project = make_project(enterprise, targets={TRL: 2})
+    client.force_login(enterprise)
+    page = client.get(f"/projects/{project.id}/trl/").content.decode()
+    assert page.index('class="kpi-row') < page.index('class="alert-stack')
+
+
 def test_target_change_pages(client, enterprise, admin_user):
     project = make_project(enterprise, targets={TRL: 2})
     detail = f"/projects/{project.id}/trl/"
@@ -330,7 +368,8 @@ def test_target_change_pages(client, enterprise, admin_user):
     client.post(f"{detail}target/", {"to_level": "3", "reason": "申请调高"})
     req = TargetChangeRequest.objects.get()
     assert "调整审核中 → TRL 3" in client.get("/trl/").content.decode()
-    assert "目标等级调整审核中" in client.get(detail).content.decode()
+    detail_page = client.get(detail).content.decode()
+    assert "调整审核中 → TRL 3" in detail_page and 'class="kpi-row' in detail_page
 
     client.force_login(admin_user)
     assert 'title="待审核">1<' in client.get("/trl/").content.decode()

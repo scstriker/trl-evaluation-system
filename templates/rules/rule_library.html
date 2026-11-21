@@ -7,10 +7,9 @@
   <div class="page-head">
     <div>
       <h1>{{ sys.name }}（{{ sys.abbr }}）评价细则</h1>
-      <div class="sub">{{ sys.standard }}：{{ sys.abbr }} 1~{{ sys.max_level }} 级定义与 {{ total_items }} 条审核依据{% if has_tracks %}（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）{% endif %}。企业申报时按本细则生成自评条目；细则修订不影响已申报的项目。本页仅评价机构管理员可见。</div>
     </div>
     {% if total_items %}
-    <div class="actions">
+    <div class="actions page-toolbar" style="margin:0">
       {% if has_tracks %}
       <select id="rule-track-filter" class="input" style="width:auto">
         <option value="">全部类别</option>
@@ -23,6 +22,10 @@
     {% endif %}
   </div>
   {% include "rules/_rules_tabs.html" %}
+  <details class="disclosure">
+    <summary>细则说明</summary>
+    <p class="mt-0 mb-0">{{ sys.standard }}：{{ sys.abbr }} 1~{{ sys.max_level }} 级定义与 {{ total_items }} 条审核依据{% if has_tracks %}（硬件 {{ hw_total }} 条 · 软件 {{ sw_total }} 条）{% endif %}。企业申报时按本细则生成自评条目；细则修订不影响已申报的项目。本页仅评价机构管理员可见。</p>
+  </details>
 
   {% if not total_items %}
   <div class="card" style="margin-bottom:24px">

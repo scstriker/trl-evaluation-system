@@ -7,15 +7,8 @@
   <div class="page-head">
     <div>
       <h1>{{ sys.name }}（{{ sys.abbr }}）评价</h1>
-      <div class="sub">
-        {% if current_is_admin %}
-        全部企业申报的{{ sys.name }}评价。待审核的项目排在最前，请逐级核查企业自评与佐证材料后审核通过或退回。
-        {% else %}
-        按{{ sys.standard }}逐条自评并上传佐证材料，可逐级提交审核，也可一次提交至目标等级；被退回的级别按审核意见修改后重新提交。
-        {% endif %}
-      </div>
     </div>
-    <div class="actions">
+    <div class="actions page-toolbar">
       {% if current_is_admin %}
       <a class="btn ghost sm" href="{% url 'evaluations:recycle_bin' %}">
         <svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
@@ -35,8 +28,18 @@
     </div>
   </div>
 
+  <details class="disclosure">
+    <summary>{% if current_is_admin %}列表说明{% else %}如何填写与提交{% endif %}</summary>
+    {% if current_is_admin %}
+    <p class="mt-0 mb-0">全部企业申报的{{ sys.name }}评价。待审核的项目排在最前，请逐级核查企业自评与佐证材料后审核通过或退回。</p>
+    {% else %}
+    <p class="mt-0 mb-0">按{{ sys.standard }}逐条自评并上传佐证材料，可逐级提交审核，也可一次提交至目标等级；被退回的级别按审核意见修改后重新提交。</p>
+    {% endif %}
+  </details>
+
   {% if not rules_ready %}
-  <div class="alert info" style="margin-bottom:24px">
+  <div class="alert-stack">
+  <div class="alert info">
     <strong>{{ sys.name }}评价细则尚未导入。</strong>
     {% if current_is_admin %}
     请按《{{ sys.name }}评价细则》模板整理细则后导入系统（见“评价流程/细则 → {{ sys.abbr }}评价细则”页的导入说明），导入后企业即可申报{{ sys.name }}评价。
@@ -44,10 +47,11 @@
     {{ sys.name }}评价暂未开放申报，如有需要请联系评价机构。
     {% endif %}
   </div>
+  </div>
   {% endif %}
 
   {% if rules_ready or rows %}
-  <div class="kpi-row">
+  <div class="kpi-row page-section">
     {% if current_is_admin %}
     <div class="kpi {% if counters.submitted %}hi{% endif %}"><span class="l">待审核</span><span class="v">{{ counters.submitted }}<small>个</small></span><span class="d">企业已提交，等待核查</span></div>
     <div class="kpi"><span class="l">已退回待修改</span><span class="v">{{ counters.returned }}<small>个</small></span><span class="d">等待企业按意见修改</span></div>
@@ -62,11 +66,11 @@
   </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card page-section">
     <div class="card-head"><h2>{{ sys.name }}评价项目</h2><span class="small muted">共 {{ rows|length }} 个</span></div>
     {% if rows %}
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead>
           <tr>
             <th>技术项目名称</th>
@@ -91,8 +95,8 @@
               {% elif not current_is_admin %}<div class="target-note"><a class="small" href="{% url 'evaluations:assessment_detail' row.project.id sys.code %}?adjust=1">申请调整</a></div>{% endif %}</td>
             <td class="num">{% if row.achieved %}{{ sys.abbr }} {{ row.achieved }}{% else %}—{% endif %}</td>
             <td>
-              <div class="flex" style="gap:8px;flex-wrap:nowrap">
-                <div class="progress" style="flex:1"><div class="bar" style="width:{{ row.stats.percent }}%"></div></div>
+              <div class="flex">
+                <div class="progress" style="flex:1;min-width:0"><div class="bar" style="width:{{ row.stats.percent }}%"></div></div>
                 <span class="progress-label">{{ row.stats.completed }}/{{ row.stats.total }}</span>
               </div>
             </td>
@@ -122,10 +126,13 @@
   </div>
 
   {% if without and can_create and rules_ready %}
-  <div class="card">
-    <div class="card-head"><h2>尚未开展{{ sys.name }}评价的项目</h2><span class="small muted">可为已申报的项目追加{{ sys.name }}评价，以便出具综合评价报告</span></div>
+  <div class="card page-section">
+    <div class="card-head card-head--stack">
+      <h2>尚未开展{{ sys.name }}评价的项目</h2>
+      <p class="card-desc">可为已申报的项目追加{{ sys.name }}评价，以便出具综合评价报告</p>
+    </div>
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead><tr><th>技术项目名称</th><th>技术类型</th><th class="nowrap">操作</th></tr></thead>
         <tbody>
           {% for project in without %}

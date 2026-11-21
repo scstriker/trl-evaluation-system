@@ -131,4 +131,4 @@ tests/               pytest-django（python -m pytest -q）
 
 ## 设计规范
 
-UI 遵循 `itei-design-system`：白底 1px 边框分层、无圆角卡片、品牌 navy 为主色、每屏至多一处品牌红、渐变只用于页眉、45° 斜切品牌形状、微软雅黑字体栈、单色线性图标，状态色均配文字。
+UI 遵循 `itei-design-system`：白底 1px 边框分层、无圆角卡片、品牌 navy 为主色、每屏至多一处品牌红、渐变只用于页眉、45° 斜切品牌形状、微软雅黑字体栈、单色线性图标，状态色均配文字。页面说明与操作分层见 `static/css/app.css` 中 **Layout rhythm** 与 **Page zones**（`page-hero` / `checklist` / `upload-card` 等），约定与审计见 [`docs/ui-audit/`](docs/ui-audit/)。新页面优先复用这些类而非内联样式。

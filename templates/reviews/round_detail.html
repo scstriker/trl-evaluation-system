@@ -22,23 +22,49 @@
   </div>
   {% endif %}
 
-  {% if round.status == 'assigning' %}
-  <div class="alert warning"><strong>还有 {{ free_count }} 个席位待分配专家。</strong> <a href="{% url 'reviews:assign' round.id %}">去分配专家 →</a></div>
-  {% elif round.status == 'reviewing' %}
-  <div class="alert info">专家评审中：三位专家都提交意见后进入终审。逾期未提交的，可以催办、延期或更换专家。</div>
-  {% elif round.status == 'ruling' %}
-  <div class="alert warning"><strong>三位专家意见已齐，请逐条终审。</strong>专家意见一致的可以批量确认；意见不一致或要推翻一致意见的，须填写裁定理由；判不通过的须填写整改要求（企业可见）。</div>
-  {% elif round.status == 'rectifying' %}
-  <div class="alert warning">
-    <strong>已终审，等待企业整改：{{ stats.fail }} 条需整改，截止 {{ round.rectify_due_at|date:"Y-m-d H:i" }}{% if round.rectify_overdue %}（已逾期）{% endif %}。</strong>
+  <div class="status-summary">
+    {% if round.status == 'assigning' %}
+    <span class="tag warning">待分配</span>
+    <span>还有 {{ free_count }} 个席位</span>
+    <a href="{% url 'reviews:assign' round.id %}">去分配专家 →</a>
+    {% elif round.status == 'reviewing' %}
+    <span class="tag info">专家评审中</span>
+    <span class="hint">三人交齐后进入终审；可催办、延期或更换</span>
+    {% elif round.status == 'ruling' %}
+    <span class="tag warning">待终审</span>
+    <span>意见已齐 · 不一致须写裁定理由</span>
+    {% elif round.status == 'rectifying' %}
+    <span class="tag warning">{{ stats.fail }} 条需整改</span>
+    <span>截止 {{ round.rectify_due_at|date:"Y-m-d H:i" }}</span>
+    {% if round.rectify_overdue %}<span class="tag warning">已逾期</span>{% endif %}
     <button class="btn ghost sm" type="button" data-modal-open="rectify-extend-modal">延长整改期限…</button>
+    {% else %}
+    <span class="tag success">已结束</span>
+    <span>{{ round.get_outcome_display }}</span>
+    {% if round.finalized_at %}<span class="hint">{{ round.finalized_by|who }} · {{ round.finalized_at|date:"Y-m-d H:i" }}</span>{% endif %}
+    {% endif %}
   </div>
-  {% else %}
-  <div class="alert success"><strong>第 {{ round.number }} 轮已结束：{{ round.get_outcome_display }}。</strong>{% if round.finalized_at %}终审 {{ round.finalized_by|who }} · {{ round.finalized_at|date:"Y-m-d H:i" }}。{% endif %}{% if round.feedback_summary %}终审意见：{{ round.feedback_summary }}{% endif %}</div>
+  {% if round.status == 'ruling' %}
+  <details class="disclosure">
+    <summary>终审操作说明</summary>
+    <p class="mt-0 mb-0">专家意见一致的可以批量确认；意见不一致或要推翻一致意见的，须填写裁定理由；判不通过的须填写整改要求（企业可见）。</p>
+  </details>
+  {% elif round.feedback_summary and round.status == 'closed' %}
+  <p class="small muted">终审意见：{{ round.feedback_summary }}</p>
   {% endif %}
 
-  {# ---------- 专家组 ---------- #}
-  <div class="section-title">专家组（第 {{ round.number }} 轮）</div>
+  {% if submitted %}
+  <div class="kpi-row page-section">
+    <div class="kpi"><span class="l">评审条目</span><span class="v">{{ stats.total }}<small>条</small></span><span class="d">已提交意见 {{ submitted|length }}/3 位</span></div>
+    <div class="kpi"><span class="l">意见不一致</span><span class="v">{{ stats.split }}<small>条</small></span><span class="d">须由评价机构裁定并写理由</span></div>
+    <div class="kpi {% if ruling and stats.unruled %}hi{% endif %}"><span class="l">未终审</span><span class="v">{{ stats.unruled }}<small>条</small></span><span class="d">其中专家一致的 {{ stats.unanimous_pending }} 条可批量确认</span></div>
+    <div class="kpi"><span class="l">不通过</span><span class="v">{{ stats.fail }}<small>条</small></span><span class="d">{% if stats.missing_feedback %}{{ stats.missing_feedback }} 条缺整改要求{% else %}整改要求企业可见{% endif %}</span></div>
+  </div>
+  {% endif %}
+
+  {# ---------- 专家组（终审态默认折叠，让意见对照进首屏） ---------- #}
+  <details class="disclosure"{% if not ruling %} open{% endif %}>
+  <summary>专家组（第 {{ round.number }} 轮）</summary>
   <div class="slot-grid">
     {% for slot, a in slots %}
     <div class="slot-card{% if a and a.is_overdue %} overdue{% endif %}">
@@ -78,19 +104,13 @@
     {% for h in history %}<div>席位 {{ h.slot }} · {{ h.expert.expert_profile.name }} · {{ h.get_status_display }}{% if h.decline_reason %}：{{ h.decline_reason }}{% endif %}{% if h.cancel_reason %}：{{ h.cancel_reason }}{% endif %}{% if h.status == 'declined' and not h.replaced_by.exists %} · <a href="{% url 'reviews:reassign' h.id %}">改派</a>{% endif %}</div>{% endfor %}
   </div>
   {% endif %}
+  </details>
 
   {# ---------- 意见对照与终审 ---------- #}
   <div class="section-title">意见对照与终审</div>
   {% if not submitted %}
   <div class="card"><div class="empty-state"><div class="big">还没有专家提交意见</div><p>专家提交后，这里按条目并排显示三位专家的结论、满足情况评价和支撑材料评价。专家未提交的草稿不显示。</p></div></div>
   {% else %}
-  <div class="kpi-row">
-    <div class="kpi"><span class="l">评审条目</span><span class="v">{{ stats.total }}<small>条</small></span><span class="d">已提交意见 {{ submitted|length }}/3 位</span></div>
-    <div class="kpi"><span class="l">意见不一致</span><span class="v">{{ stats.split }}<small>条</small></span><span class="d">须由评价机构裁定并写理由</span></div>
-    <div class="kpi {% if ruling and stats.unruled %}hi{% endif %}"><span class="l">未终审</span><span class="v">{{ stats.unruled }}<small>条</small></span><span class="d">其中专家一致的 {{ stats.unanimous_pending }} 条可批量确认</span></div>
-    <div class="kpi"><span class="l">不通过</span><span class="v">{{ stats.fail }}<small>条</small></span><span class="d">{% if stats.missing_feedback %}{{ stats.missing_feedback }} 条缺整改要求{% else %}整改要求企业可见{% endif %}</span></div>
-  </div>
-
   <div class="flex-between" style="margin-bottom:12px">
     <div class="filter-tabs" style="margin:0" aria-label="条目筛选">
       <a href="?" {% if not show %}aria-current="true"{% endif %}>全部 <span>{{ stats.total }}</span></a>

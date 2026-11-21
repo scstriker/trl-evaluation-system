@@ -4,8 +4,11 @@
   <div>
     <h1>{{ project.name }}</h1>
     <div class="sub">
-      {{ project.applicant }} · {{ project.get_tech_type_display }}{% if project.specialty %} · {{ project.specialty.name }}{% endif %}{% if project.domain %} · {{ project.domain }}{% endif %}
-      {% if project.report_no %} · 报告编号 {{ project.report_no }}{% endif %}
+      <span>{{ project.applicant }}</span>
+      <span>{{ project.get_tech_type_display }}</span>
+      {% if project.specialty %}<span>{{ project.specialty.name }}</span>{% endif %}
+      {% if project.domain %}<span>{{ project.domain }}</span>{% endif %}
+      {% if project.report_no %}<span>报告编号 {{ project.report_no }}</span>{% endif %}
     </div>
   </div>
   <div class="actions">

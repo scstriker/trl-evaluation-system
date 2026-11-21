@@ -10,10 +10,13 @@
   <div class="flex-between" style="margin-bottom:16px">
     <div>
       <div class="section-title" style="margin:0">{{ sys.name }}专家评审记录</div>
-      <div class="small muted" style="margin-top:6px">每一轮的提交留档与终审结论都保留在这里，后续修改不影响已留档的内容。{% if not is_admin %}专家的个人意见只对评价机构可见。{% endif %}</div>
     </div>
     <a class="btn ghost sm" href="{% url 'evaluations:assessment_detail' project.id sys.code %}#expert-panel">← 返回评价页</a>
   </div>
+  <details class="disclosure">
+    <summary>留档说明</summary>
+    <p class="mt-0 mb-0">每一轮的提交留档与终审结论都保留在这里，后续修改不影响已留档的内容。{% if not is_admin %}专家的个人意见只对评价机构可见。{% endif %}</p>
+  </details>
 
   {% for entry in rounds %}
   {% with r=entry.round %}

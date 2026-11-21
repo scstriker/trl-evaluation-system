@@ -25,9 +25,34 @@
   </div>
   {% endif %}
 
-  <div class="flex-between no-print" style="margin-bottom:16px">
-    <div class="small muted">第 4 章起由系统按审核结果生成；第 1～3 章及附录 A/B 来自企业上传的 Word 材料（上传后预览会更新）。未上传概况时仍显示占位说明，并可参考管理员「编辑前置信息」的草稿。{% if generate_blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}{% if is_admin %}{% if pdf_tool %}PDF 由本机 {{ pdf_tool }} 转换。{% else %}本机未检测到 Word 或 LibreOffice，只生成 Word 报告。{% endif %}{% endif %}</div>
-    <div class="flex">
+  <div class="page-hero no-print">
+    <div class="page-hero__main">
+      <p class="page-hero__title">{% if is_owner %}导出准备{% elif is_admin %}报告生成{% else %}报告预览{% endif %}</p>
+      {% if is_owner and request_blockers and not pending_request %}
+      <ul class="checklist checklist--blockers">
+        {% for b in request_blockers %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+      {% elif is_admin and generate_blockers and not pending_request %}
+      <ul class="checklist checklist--blockers">
+        {% for b in generate_blockers %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <div class="status-summary">
+        {% if is_owner and pending_request %}<span class="tag info">导出申请审核中</span>
+        {% elif is_owner and can_request %}<span class="tag success">可申请导出</span>
+        {% elif is_admin and can_generate %}<span class="tag success">可生成 Word</span>
+        {% else %}<span class="tag neutral">在线预览</span>{% endif %}
+        <span class="hint">材料 {{ enterprise_uploaded_count }}/{{ enterprise_upload_total }}</span>
+        <span class="hint">第 4 章起系统生成；第 1～3 章与附录来自企业 Word</span>
+      </div>
+      {% endif %}
+      <details class="disclosure">
+        <summary>报告如何生成与上传</summary>
+        <p class="mt-0">第 4 章起由系统按审核结果生成；第 1～3 章及附录 A/B 来自企业上传的 Word 材料（上传后预览会更新）。未上传概况时仍显示占位说明，并可参考管理员「编辑前置信息」的草稿。{% if generate_blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</p>
+        {% if is_admin %}<p class="mb-0">{% if pdf_tool %}PDF 由本机 {{ pdf_tool }} 转换。{% else %}本机未检测到 Word 或 LibreOffice，只生成 Word 报告。{% endif %}</p>{% endif %}
+      </details>
+    </div>
+    <div class="page-hero__actions">
       {% if is_admin %}
         {% if can_generate %}
         <button class="btn primary" type="button" data-modal-open="generate-modal">
@@ -37,8 +62,8 @@
         {% else %}
         <button class="btn secondary" type="button" data-modal-open="blocker-modal">生成 Word 报告</button>
         {% endif %}
+        <a class="btn secondary" href="{% url 'reports:front_matter' project.id %}?type={{ report_type }}">编辑前置信息</a>
       {% endif %}
-      {% if is_admin %}<a class="btn secondary" href="{% url 'reports:front_matter' project.id %}?type={{ report_type }}">编辑前置信息</a>{% endif %}
       {% if can_edit_info %}<button class="btn secondary" type="button" data-modal-open="info-modal">编辑报告信息</button>{% endif %}
       {% if is_owner %}
         {% if pending_request %}
@@ -56,26 +81,25 @@
     </div>
   </div>
 
-  {# ---------- 企业：导出申请状态 ---------- #}
+  {# ---------- 企业：导出申请状态（阻断清单已在 hero，此处不再重复） ---------- #}
   {% if is_owner %}
-    {% if pending_request %}
-    <div class="alert info no-print" style="margin-bottom:16px">
-      <strong>报告导出申请审核中。</strong>提交于 {{ pending_request.requested_at|date:"Y-m-d H:i" }}，评价机构审核通过后即可下载 Word 和打印；审核期间可继续在线预览。
-    </div>
-    {% elif last_request and last_request.status == 'rejected' %}
-    <div class="alert warning no-print" style="margin-bottom:16px">
-      <strong>报告导出申请未通过：</strong>{{ last_request.reject_reason }}
-      <span class="small muted">（{{ last_request.reviewed_by|who }} · {{ last_request.reviewed_at|date:"Y-m-d H:i" }}）</span>
-      请按原因修改后重新申请。
-    </div>
-    {% elif last_request and last_request.status == 'approved' and reports %}
-    <div class="alert success no-print" style="margin-bottom:16px">
-      <strong>报告导出申请已通过。</strong>{{ last_request.reviewed_at|date:"Y-m-d H:i" }} 生成 V{{ last_request.report.version|default:reports.0.version }}，可在下方“已出具版本”下载 Word，或打印 / 存为 PDF。
-    </div>
-    {% endif %}
-    {% if request_blockers and not pending_request %}
-    <div class="alert info no-print" style="margin-bottom:16px">
-      <strong>暂不能申请导出：</strong>{{ request_blockers|join:"；" }}。
+    {% if pending_request or last_request and last_request.status == 'rejected' or last_request and last_request.status == 'approved' and reports %}
+    <div class="alert-stack no-print">
+      {% if pending_request %}
+      <div class="alert info alert--compact">
+        <strong>报告导出申请审核中。</strong>提交于 {{ pending_request.requested_at|date:"Y-m-d H:i" }}，评价机构审核通过后即可下载 Word 和打印；审核期间可继续在线预览。
+      </div>
+      {% elif last_request and last_request.status == 'rejected' %}
+      <div class="alert warning">
+        <strong>报告导出申请未通过：</strong>{{ last_request.reject_reason }}
+        <span class="small muted">（{{ last_request.reviewed_by|who }} · {{ last_request.reviewed_at|date:"Y-m-d H:i" }}）</span>
+        请按原因修改后重新申请。
+      </div>
+      {% elif last_request and last_request.status == 'approved' and reports %}
+      <div class="alert success alert--compact">
+        <strong>报告导出申请已通过。</strong>{{ last_request.reviewed_at|date:"Y-m-d H:i" }} 生成 V{{ last_request.report.version|default:reports.0.version }}，可在下方“已出具版本”下载 Word，或打印 / 存为 PDF。
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   {% endif %}
@@ -90,7 +114,10 @@
     <div class="card-body">
       <p class="mt-0">请核对下方预览的报告内容。审核通过即生成 V{{ next_version }} Word 报告，企业随即可以下载和打印；驳回须写明原因。</p>
       {% if generate_blockers %}
-      <div class="alert warning" style="margin-bottom:12px"><strong>通过前还需处理：</strong>{{ generate_blockers|join:"；" }}。</div>
+      <p class="small mt-0"><strong>通过前还需处理</strong></p>
+      <ul class="checklist checklist--blockers">
+        {% for b in generate_blockers %}<li>{{ b }}</li>{% endfor %}
+      </ul>
       {% endif %}
       <div class="flex">
         <button class="btn primary" type="button" data-modal-open="approve-request-modal" {% if generate_blockers %}disabled{% endif %}>
@@ -100,37 +127,47 @@
       </div>
     </div>
   </div>
-  {% elif is_admin and generate_blockers %}
-  <div class="alert warning no-print" style="margin-bottom:16px">
-    <strong>暂不能生成本报告：</strong>{{ generate_blockers|join:"；" }}。
-  </div>
   {% endif %}
 
   {% if is_owner or is_admin %}
-  <div class="card no-print" style="margin-bottom:24px">
-    <div class="card-head"><h2>企业材料模板</h2><span class="small muted">请下载三类模板填写后上传：「项目概况」含第 1～3 章（勿写第 4 章及以后）；「附录 A WBST」须用官方 WBST 表；「评价支撑信息」对应附录 B。三类文件齐全后方可申请导出。</span></div>
+  <div class="card no-print page-section">
+    <div class="card-head card-head--stack">
+      <h2>企业材料模板</h2>
+      <ul class="checklist">
+        <li>「项目概况」含第 1～3 章（勿写第 4 章及以后）</li>
+        <li>「附录 A WBST」须用官方 WBST 表</li>
+        <li>「评价支撑信息」对应附录 B；三类齐全后方可申请导出</li>
+      </ul>
+      <details class="disclosure" style="margin:0;width:100%">
+        <summary>填写与上传说明</summary>
+        <p class="mt-0 mb-0">请下载三类模板填写后上传。上传后在线预览会更新；须为 .docx 文件。</p>
+      </details>
+    </div>
     <div class="card-body">
       {% for row in enterprise_doc_rows %}
       {% with kind=row.kind label=row.label up=row.upload %}
-      <div class="flex-between" style="align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
-        <div>
-          <strong>{{ label }}</strong>
-          {% if up %}<div class="small muted">已上传：{{ up.original_filename }} · {{ up.uploaded_at|date:"Y-m-d H:i" }} · {{ up.uploaded_by|who }}</div>{% else %}<div class="small muted">尚未上传</div>{% endif %}
+      <div class="upload-card">
+        <div class="upload-card__head">
+          <h3 class="upload-card__title">{{ label }}</h3>
+          {% if up %}<span class="tag success">已上传</span>{% else %}<span class="tag warning">尚未上传</span>{% endif %}
         </div>
-        <div class="flex" style="flex-wrap:wrap;gap:8px">
+        {% if up %}
+        <div class="upload-card__meta">{{ up.original_filename }} · {{ up.uploaded_at|date:"Y-m-d H:i" }} · {{ up.uploaded_by|who }}</div>
+        {% endif %}
+        <div class="upload-card__actions">
           <a class="btn ghost sm" href="{% url 'reports:enterprise_template' kind %}">下载模板</a>
           {% if up %}<a class="btn ghost sm" href="{% url 'reports:enterprise_download' up.id %}">下载已填文件</a>{% endif %}
-          {% if is_owner %}
-          <form method="post" action="{% url 'reports:enterprise_upload' project.id %}" enctype="multipart/form-data" class="flex" style="align-items:center;gap:8px">
-            {% csrf_token %}
-            <input type="hidden" name="type" value="{{ report_type }}">
-            <input type="hidden" name="kind" value="{{ kind }}">
-            <input type="file" name="file" class="input" style="max-width:220px" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
-            <button class="btn secondary sm" type="submit">上传</button>
-            <span class="small muted">须为 .docx Word 文档</span>
-          </form>
-          {% endif %}
         </div>
+        {% if is_owner %}
+        <form method="post" action="{% url 'reports:enterprise_upload' project.id %}" enctype="multipart/form-data" class="file-upload-row">
+          {% csrf_token %}
+          <input type="hidden" name="type" value="{{ report_type }}">
+          <input type="hidden" name="kind" value="{{ kind }}">
+          <input type="file" name="file" class="input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+          <button class="btn secondary sm" type="submit">上传</button>
+          <span class="field-hint">须为 .docx</span>
+        </form>
+        {% endif %}
       </div>
       {% endwith %}
       {% endfor %}
@@ -138,11 +175,14 @@
   </div>
   {% endif %}
 
-  <div class="card no-print" style="margin-bottom:24px">
-    <div class="card-head"><h2>已出具版本 · {{ report.title }}</h2><span class="small muted">每次生成版本号递增，文件 SHA-256 存档</span></div>
+  <div class="card no-print page-section">
+    <div class="card-head card-head--stack">
+      <h2>已出具版本 · {{ report.title }}</h2>
+      <p class="card-desc">每次生成版本号递增，文件 SHA-256 存档</p>
+    </div>
     {% if reports %}
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data-table--compact">
         <thead><tr><th class="num">版本</th><th>报告编号</th><th>文件名</th><th class="num">达成等级</th><th class="nowrap">生成时间</th><th>生成人</th><th>SHA-256（Word / PDF）</th><th class="nowrap">下载</th></tr></thead>
         <tbody>
           {% for r in reports %}
@@ -153,7 +193,7 @@
             <td class="num">{{ r.level_display }}</td>
             <td class="nowrap">{{ r.generated_at|date:"Y-m-d H:i" }}</td>
             <td>{{ r.generated_by|who }}</td>
-            <td class="mono small" style="word-break:break-all">{{ r.sha256|slice:":16" }}…{% if r.pdf_sha256 %}<br>{{ r.pdf_sha256|slice:":16" }}…{% endif %}</td>
+            <td class="sha-cell">{{ r.sha256|slice:":16" }}…{% if r.pdf_sha256 %}<br>{{ r.pdf_sha256|slice:":16" }}…{% endif %}</td>
             <td class="nowrap">
               <a class="btn secondary sm" href="{% url 'reports:download_report' r.id %}">Word</a>
               {% if r.overview_file %}<a class="btn ghost sm" href="{% url 'reports:download_report_overview' r.id %}">概况</a>{% endif %}

@@ -13,9 +13,18 @@
   </div>
 
   {% if mode == 'reassign' %}
-  <div class="alert info">当前专家：<strong>{{ assignment.expert.expert_profile.name }}</strong>（{{ assignment.get_status_display }}{% if assignment.decline_reason %}，拒绝原因：{{ assignment.decline_reason }}{% endif %}）。更换后原专家收到“任务已收回”的私信，新专家收到新任务。</div>
+  <div class="status-summary">
+    <span class="tag info">更换席位 {{ assignment.slot }}</span>
+    <span>当前：{{ assignment.expert.expert_profile.name }}（{{ assignment.get_status_display }}）</span>
+  </div>
+  {% if assignment.decline_reason %}<p class="small muted">拒绝原因：{{ assignment.decline_reason }}</p>{% endif %}
+  <details class="disclosure"><summary>更换说明</summary><p class="mt-0 mb-0">更换后原专家收到“任务已收回”的私信，新专家收到新任务。</p></details>
   {% else %}
-  <div class="alert info">每轮固定 3 位专家，本次还需选择 <strong>{{ free_slots|length }}</strong> 位（席位 {% for s in free_slots %}{{ s }}{% if not forloop.last %}、{% endif %}{% endfor %}）。专家收到站内私信后，须签署保密与回避承诺才能看到项目材料。</div>
+  <div class="status-summary">
+    <span class="tag info">还需 {{ free_slots|length }} 位</span>
+    <span>席位 {% for s in free_slots %}{{ s }}{% if not forloop.last %}、{% endif %}{% endfor %} · 每轮固定 3 位</span>
+  </div>
+  <details class="disclosure"><summary>分配说明</summary><p class="mt-0 mb-0">专家收到站内私信后，须签署保密与回避承诺才能看到项目材料。</p></details>
   {% endif %}
 
   <div class="filter-tabs" aria-label="技术领域">

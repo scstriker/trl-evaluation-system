@@ -13,23 +13,38 @@
   </div>
 
   {% if assignment.status == 'invited' %}
-  <div class="alert warning">请先在“评审任务”列表中阅读保密与回避承诺并接受任务，再开始评审。</div>
+  <div class="alert warning alert--compact">请先在“评审任务”列表中阅读保密与回避承诺并接受任务，再开始评审。</div>
   {% elif assignment.status == 'submitted' %}
-  <div class="alert success"><strong>评审意见已于 {{ assignment.submitted_at|date:"Y-m-d H:i" }} 提交，不能再修改。</strong>评价机构汇总三位专家的意见后终审。</div>
+  <div class="status-summary">
+    <span class="tag success">已提交</span>
+    <span>{{ assignment.submitted_at|date:"Y-m-d H:i" }} · 不可再改</span>
+    <span class="hint">评价机构汇总三位专家意见后终审</span>
+  </div>
   {% else %}
-  <div class="alert info">
-    已给出结论 <strong>{{ filled }}/{{ total }}</strong> 条，截止 {{ assignment.due_at|date:"Y-m-d H:i" }}{% if assignment.is_overdue %} <span class="tag warning">已逾期 {{ assignment.overdue_days }} 天</span>{% endif %}。
-    按级填写并保存，全部填完后点击“提交评审意见”。判为不通过的条目，请写明满足情况评价或支撑材料评价，评价机构据此形成整改要求。
-    <div class="flex" style="margin-top:10px"><button class="btn primary sm" type="button" data-modal-open="submit-modal" {% if missing or unexplained %}title="还有条目未填写完整，可打开查看"{% endif %}>提交评审意见…</button></div>
+  <div class="page-hero">
+    <div class="page-hero__main">
+      <div class="status-summary">
+        <span class="tag info">{{ filled }}/{{ total }} 条已填</span>
+        <span>截止 {{ assignment.due_at|date:"Y-m-d H:i" }}</span>
+        {% if assignment.is_overdue %}<span class="tag warning">逾期 {{ assignment.overdue_days }} 天</span>{% endif %}
+      </div>
+      <details class="disclosure">
+        <summary>填写说明</summary>
+        <p class="mt-0 mb-0">按级填写并保存，全部填完后提交。判为不通过的条目须写明满足情况评价或支撑材料评价，评价机构据此形成整改要求。</p>
+      </details>
+    </div>
+    <div class="page-hero__actions">
+      <button class="btn primary sm" type="button" data-modal-open="submit-modal" {% if missing or unexplained %}title="还有条目未填写完整，可打开查看"{% endif %}>提交评审意见…</button>
+    </div>
   </div>
   {% endif %}
 
   {% if assignment.status == 'declined' %}
-  <div class="alert neutral">你已拒绝该任务，不能再查看企业自评与佐证材料。如需重新参与，请联系评价机构改派。</div>
+  <div class="alert neutral alert--compact">你已拒绝该任务，不能再查看企业自评与佐证材料。如需重新参与，请联系评价机构改派。</div>
   {% elif assignment.status != 'invited' %}
-  <div class="filter-tabs" aria-label="评审级别">
+  <div class="filter-tabs filter-tabs--compact" aria-label="评审级别">
     {% for t in level_tabs %}
-    <a href="?level={{ t.level }}" {% if t.level == level %}aria-current="true"{% endif %}>第 {{ t.level }} 级 <span>{{ t.filled }}/{{ t.total }}</span></a>
+    <a href="?level={{ t.level }}" {% if t.level == level %}aria-current="true"{% endif %}>L{{ t.level }} <span>{{ t.filled }}/{{ t.total }}</span></a>
     {% endfor %}
   </div>
 

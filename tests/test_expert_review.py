@@ -316,6 +316,16 @@ def _finalize_with_levels_1_and_2_failures(enterprise, admin_user, experts):
     return project, assessment, review_round, fail_l1, fail_l2
 
 
+def test_rectifying_detail_shows_expert_panel_not_returned_alert(client, enterprise, admin_user, experts):
+    project, assessment, review_round, _split, _unanimous = _finalize_with_level2_failures(enterprise, admin_user, experts)
+    assert review_round.status == ReviewRound.STATUS_RECTIFYING
+    client.force_login(enterprise)
+    page = client.get(f"/projects/{project.id}/trl/").content.decode()
+    assert page.index('class="kpi-row') < page.index('class="alert-stack')
+    assert "rectify-table" in page
+    assert "以下级别被评价机构退回，请按审核意见修改后重新提交审核：" not in page
+
+
 def test_rectify_staggered_resubmit_admin_passes_first_level(enterprise, admin_user, experts):
     """两级退回后，企业分批重交且管理员先通过第 1 级，仍应能结束整改轮次。"""
     project, assessment, review_round, fail_l1, fail_l2 = _finalize_with_levels_1_and_2_failures(enterprise, admin_user, experts)
