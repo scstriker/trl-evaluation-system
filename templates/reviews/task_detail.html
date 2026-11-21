@@ -24,7 +24,9 @@
   </div>
   {% endif %}
 
-  {% if assignment.status != 'invited' %}
+  {% if assignment.status == 'declined' %}
+  <div class="alert neutral">你已拒绝该任务，不能再查看企业自评与佐证材料。如需重新参与，请联系评价机构改派。</div>
+  {% elif assignment.status != 'invited' %}
   <div class="filter-tabs" aria-label="评审级别">
     {% for t in level_tabs %}
     <a href="?level={{ t.level }}" {% if t.level == level %}aria-current="true"{% endif %}>第 {{ t.level }} 级 <span>{{ t.filled }}/{{ t.total }}</span></a>

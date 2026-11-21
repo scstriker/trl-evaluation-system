@@ -54,10 +54,10 @@ def _uploaded_file_sha256(uploaded_file):
 def _file_extension(uploaded_file):
     name = (uploaded_file.name or "file").strip()
     extension = Path(name).suffix.lower()
-    if extension in ALLOWED_EXTENSIONS:
+    if extension:
         return extension
     mime = (getattr(uploaded_file, "content_type", "") or "").split(";")[0].strip().lower()
-    return _EXTENSION_BY_MIME.get(mime, extension)
+    return _EXTENSION_BY_MIME.get(mime, "")
 
 
 def _validate_uploaded_file(uploaded_file):

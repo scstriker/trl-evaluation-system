@@ -21,7 +21,9 @@ from tests.test_core_flow import make_project
 
 def make_expert(admin, name="测试专家", code="instrument", username="", **extra):
     data = {"name": name, "organization": "某研究院", "specialty": Specialty.objects.get(code=code), **extra}
-    return services.create_expert(data, admin, username=username).user
+    profile = services.create_expert(data, admin, username=username)
+    profile.user._initial_password = profile.initial_password
+    return profile.user
 
 
 @pytest.fixture
@@ -38,7 +40,8 @@ def test_specialties_seeded(db):
 def test_create_expert_role_and_notification(admin_user, expert, enterprise):
     assert is_expert(expert) and role_label(expert) == "评审专家" and display_name(expert) == "甲专家"
     assert not is_expert(enterprise) and not is_expert(admin_user)
-    assert expert.check_password(services.INITIAL_PASSWORD)
+    assert expert.check_password(expert._initial_password)
+    assert expert._initial_password != services.INITIAL_PASSWORD
     note = Notification.objects.get(recipient=expert)
     assert note.kind == "expert.create" and note.category == "task"
     assert AuditLog.objects.filter(action="expert.create").exists()
@@ -141,8 +144,9 @@ def test_import_experts(client, admin_user, expert):
             ["", "", "", "", "", "", "", "", ""],
         ]
     )
-    created, updated, errors = services.import_experts(data, admin_user)
+    created, updated, errors, new_passwords = services.import_experts(data, admin_user)
     assert (created, updated) == (1, 1)
+    assert len(new_passwords) == 1
     assert len(errors) == 1 and "第 4 行" in errors[0]
     new = ExpertProfile.objects.get(name="新专家")
     assert new.tags == ["MEMS", "可靠性"] and not new.in_service and new.user.username.startswith("expert")

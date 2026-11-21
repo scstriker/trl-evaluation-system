@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.experts.services import INITIAL_PASSWORD, import_experts
+from apps.experts.services import import_experts
 
 
 class Command(BaseCommand):
@@ -23,9 +23,11 @@ class Command(BaseCommand):
             raise CommandError(f"管理员账号 {options['actor']} 不存在。")
         try:
             with open(options["xlsx"], "rb") as file:
-                created, updated, errors = import_experts(file, actor)
+                created, updated, errors, new_passwords = import_experts(file, actor)
         except (OSError, ValidationError) as exc:
             raise CommandError(str(exc)) from exc
-        self.stdout.write(self.style.SUCCESS(f"新增 {created} 位，更新 {updated} 位（新账号初始密码 {INITIAL_PASSWORD}）"))
+        self.stdout.write(self.style.SUCCESS(f"新增 {created} 位，更新 {updated} 位"))
+        for username, password in new_passwords:
+            self.stdout.write(f"  {username}  初始密码 {password}")
         for line in errors:
             self.stdout.write(self.style.WARNING(line))

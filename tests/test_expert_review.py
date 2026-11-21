@@ -301,6 +301,53 @@ def test_ruling_rules_and_finalize_maps_levels(enterprise, admin_user, experts):
     assert not project.team_members.filter(group=EvaluationTeamMember.GROUP_THIRD).exists()
 
 
+def _finalize_with_levels_1_and_2_failures(enterprise, admin_user, experts):
+    project, assessment, review_round = start_review(enterprise, admin_user, experts)
+    sample = services.task_items(review_round.assignments.first())
+    fail_l1 = next(ri.check_item for ri in sample if ri.check_item.level == 1)
+    fail_l2 = next(ri.check_item for ri in sample if ri.check_item.level == 2)
+    for assignment in review_round.assignments.all():
+        opine(assignment, fail_codes=[fail_l1.code, fail_l2.code])
+    services.confirm_unanimous(review_round, admin_user)
+    for ri in review_round.items.filter(check_item__in=[fail_l1, fail_l2]):
+        services.rule_item(ri, admin_user, "fail", feedback=f"请补充 {ri.check_item.code}")
+    services.finalize_round(review_round, admin_user, rectify_days=10, summary="两级均需整改")
+    review_round.refresh_from_db()
+    return project, assessment, review_round, fail_l1, fail_l2
+
+
+def test_rectify_staggered_resubmit_admin_passes_first_level(enterprise, admin_user, experts):
+    """两级退回后，企业分批重交且管理员先通过第 1 级，仍应能结束整改轮次。"""
+    project, assessment, review_round, fail_l1, fail_l2 = _finalize_with_levels_1_and_2_failures(enterprise, admin_user, experts)
+    eval_services.evaluate_check_item(fail_l1, enterprise, {"result": "satisfied", "statement": "第1级整改"})
+    eval_services.submit_levels(assessment, enterprise, 1)
+    eval_services.pass_levels(assessment, admin_user, 1)
+    review_round.refresh_from_db()
+    assert review_round.status == ReviewRound.STATUS_RECTIFYING
+
+    eval_services.evaluate_check_item(fail_l2, enterprise, {"result": "satisfied", "statement": "第2级整改"})
+    eval_services.submit_levels(assessment, enterprise, 2)
+    review_round.refresh_from_db()
+    assert review_round.status == ReviewRound.STATUS_CLOSED
+    assert review_round.outcome == ReviewRound.OUTCOME_RECTIFIED
+    assert not services.start_blockers(assessment)
+
+
+def test_declined_expert_cannot_view_materials(client, enterprise, admin_user, experts):
+    project, assessment = expert_project(enterprise)
+    review_round = services.start_expert_review(assessment, admin_user)
+    services.assign_experts(review_round, admin_user, [e.pk for e in experts[:3]])
+    a1 = review_round.assignments.order_by("slot").first()
+    services.respond_assignment(a1, experts[0], False, reason="需回避")
+    item = assessment.items.order_by("order_index").first()
+    evidence_id = item.evidence_files.filter(is_deleted=False).first().id
+    client.force_login(experts[0])
+    page = client.get(f"/reviews/tasks/{a1.id}/").content.decode()
+    assert "你已拒绝该任务" in page
+    assert 'field-label">企业自评' not in page
+    assert client.get(f"/reviews/tasks/{a1.id}/evidence/{evidence_id}/").status_code == 404
+
+
 def test_rectify_lock_resubmit_and_rereview(enterprise, admin_user, experts):
     project, assessment, review_round, split, unanimous = _finalize_with_level2_failures(enterprise, admin_user, experts)
     passed_in_level2 = assessment.items.filter(level=2).exclude(id__in=[split.id, unanimous.id]).first()

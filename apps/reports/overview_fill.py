@@ -134,6 +134,29 @@ def _fill_team_table(table, self_rows, third_rows):
     write_block(third_start + 2, len(table.rows), third_rows or [])
 
 
+def restore_team_section_from_front(docx_bytes: bytes, front: dict) -> bytes:
+    """企业概况 Word 合并后，用系统登记的评价组成员重新填入表 2-1。"""
+    doc = Document(BytesIO(docx_bytes))
+    caption = None
+    for paragraph in _paragraphs(doc):
+        normalized = _text_of(paragraph).replace("\u3000", "").replace(" ", "")
+        if "表2-1" in normalized and "评价组" in normalized:
+            caption = paragraph
+            break
+    if caption is None:
+        return docx_bytes
+    el = caption._p.getnext()
+    while el is not None and el.tag != qn("w:tbl"):
+        el = el.getnext()
+    if el is None:
+        return docx_bytes
+    table = Table(el, caption._parent)
+    _fill_team_table(table, front.get("self_rows") or [], front.get("third_rows") or [])
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 def ensure_enterprise_overview_template():
     if not SOURCE.is_file():
         raise FileNotFoundError(SOURCE)

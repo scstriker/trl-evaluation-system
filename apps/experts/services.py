@@ -1,6 +1,8 @@
 """专家库：开通专家账号、维护档案、Excel 批量导入。"""
 
 import re
+import secrets
+import string
 
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -16,6 +18,12 @@ from apps.rules.models import Specialty
 
 INITIAL_PASSWORD = "Trl@2026"
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,19}$")
+_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "!@#$%"
+
+
+def generate_initial_password(length=12):
+    """正式专家账号的一次性初始密码（样例账号仍用 INITIAL_PASSWORD）。"""
+    return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
 
 PROFILE_FIELDS = [
     "name",
@@ -107,11 +115,13 @@ def _validate_username(username):
 
 
 @transaction.atomic
-def create_expert(data, actor, username="", password=INITIAL_PASSWORD, is_sample=False):
+def create_expert(data, actor, username="", password=None, is_sample=False):
     """开通专家账号并建立档案。data 为档案字段字典（specialty 为 Specialty 实例）。"""
     _ensure_admin(actor)
     username = (username or "").strip() or next_username()
     _validate_username(username)
+    if password is None:
+        password = INITIAL_PASSWORD if is_sample else generate_initial_password()
     user = User.objects.create_user(username=username, password=password, first_name=data["name"])
     profile = ExpertProfile(user=user, is_sample=is_sample, **{key: data[key] for key in PROFILE_FIELDS if key in data})
     profile.full_clean(exclude=["user"])
@@ -125,6 +135,7 @@ def create_expert(data, actor, username="", password=INITIAL_PASSWORD, is_sample
         link=reverse("experts:expert_detail", args=[profile.pk]),
         category=CATEGORY_TASK,
     )
+    profile.initial_password = password
     return profile
 
 
@@ -194,6 +205,7 @@ def import_experts(file, actor):
     if "name" not in headers or "organization" not in headers:
         raise ValidationError("表头须包含“姓名”和“工作单位”两列。")
     created, updated, errors = 0, 0, []
+    new_passwords: list[tuple[str, str]] = []
     for line, values in enumerate(rows, start=2):
         row = {key: _cell(value) for key, value in zip(headers, values) if key}
         if not any(row.values()):
@@ -206,8 +218,9 @@ def import_experts(file, actor):
                     update_expert(existing, data, actor)
                     updated += 1
                 else:
-                    create_expert(data, actor, username=row.get("username", ""))
+                    profile = create_expert(data, actor, username=row.get("username", ""))
                     created += 1
+                    new_passwords.append((profile.user.username, profile.initial_password))
         except ValidationError as exc:
             errors.append(f"第 {line} 行：{'；'.join(exc.messages)}")
-    return created, updated, errors
+    return created, updated, errors, new_passwords

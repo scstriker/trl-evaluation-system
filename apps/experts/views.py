@@ -61,7 +61,8 @@ def expert_create(request):
             form.add_error(None, _errors(exc))
         else:
             messages.success(
-                request, f"已开通评审专家账号 {profile.user.username}（初始密码 {services.INITIAL_PASSWORD}），请告知专家登录后修改密码。"
+                request,
+                f"已开通评审专家账号 {profile.user.username}（一次性初始密码 {profile.initial_password}），请告知专家登录后修改密码。",
             )
             return redirect("experts:expert_detail", pk=profile.pk)
     return render(request, "experts/expert_form.html", {"form": form, "active_nav": "experts"})
@@ -117,15 +118,20 @@ def expert_import(request):
         messages.error(request, _errors(form.errors["file"]) if "file" in form.errors else "请选择要导入的文件。")
         return redirect("experts:expert_list")
     try:
-        created, updated, errors = services.import_experts(form.cleaned_data["file"], request.user)
+        created, updated, errors, new_passwords = services.import_experts(form.cleaned_data["file"], request.user)
     except (ValidationError, PermissionDenied) as exc:
         messages.error(request, _errors(exc))
         return redirect("experts:expert_list")
     text = f"导入完成：新增 {created} 位专家，更新 {updated} 位。"
+    if new_passwords:
+        pwd_hint = "；".join(f"{u}：{p}" for u, p in new_passwords[:8])
+        if len(new_passwords) > 8:
+            pwd_hint += f"……等 {len(new_passwords)} 个账号"
+        text += f" 新账号一次性初始密码：{pwd_hint}。"
     if errors:
         messages.error(request, text + f"另有 {len(errors)} 行未导入：" + "；".join(errors[:5]) + ("……" if len(errors) > 5 else ""))
     else:
-        messages.success(request, text + f"新开通的账号初始密码为 {services.INITIAL_PASSWORD}。")
+        messages.success(request, text)
     return redirect("experts:expert_list")
 
 

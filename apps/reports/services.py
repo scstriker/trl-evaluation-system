@@ -190,6 +190,11 @@ def _evidence_table_block(evidence_files):
     }
 
 
+def appendix_chapter_number(num_parts: int) -> int:
+    """正文末章为「总结」；附录章号 = 4（评价准则）+ len(parts) + 1（总结） + 1。"""
+    return 5 + num_parts + 1
+
+
 def _appendix_trailer_blocks(evidence_files, *, merge_mode):
     if not merge_mode:
         return []
@@ -199,8 +204,8 @@ def _appendix_trailer_blocks(evidence_files, *, merge_mode):
     ]
 
 
-def _preview_appendix_blocks(wbst, support, evidence_files):
-    blocks = [{"kind": "h1", "text": "7 附录"}]
+def _preview_appendix_blocks(wbst, support, evidence_files, appendix_chapter):
+    blocks = [{"kind": "h1", "text": f"{appendix_chapter} 附录"}]
     if wbst:
         blocks += docx_preview.appendix_status_block("附录A WBST 表", wbst.original_filename)
         preview_rows = docx_preview.extract_blocks(wbst.file, limit_paras=40)
@@ -243,8 +248,11 @@ def build_report(project, report_type, wbst=None, overview=None, support=None):
     tail = _tail_blocks(
         project, report_type, parts, evidence_files, start=4, wbst=wbst, merge_appendices=merge_mode
     )
+    appendix_chapter = appendix_chapter_number(len(parts))
     appendix_trailer = _appendix_trailer_blocks(evidence_files, merge_mode=merge_mode)
-    appendix_preview = _preview_appendix_blocks(wbst, support, evidence_files) if merge_mode else []
+    appendix_preview = (
+        _preview_appendix_blocks(wbst, support, evidence_files, appendix_chapter) if merge_mode else []
+    )
     blocks = head + tail + appendix_preview
 
     return {
@@ -259,6 +267,7 @@ def build_report(project, report_type, wbst=None, overview=None, support=None):
         "tail_blocks": tail,
         "appendix_trailer_blocks": appendix_trailer,
         "appendix_preview_blocks": appendix_preview,
+        "appendix_chapter": appendix_chapter,
         "merge_mode": merge_mode,
         "enterprise_overview": overview,
         "enterprise_support": support,

@@ -2,12 +2,14 @@
 
 import copy
 import logging
+import re
 import sys
 import tempfile
 from io import BytesIO
 from pathlib import Path
 
 from docx import Document
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
@@ -28,6 +30,15 @@ def _paragraph_text(element, parent):
     return "".join(run.text for run in Paragraph(element, parent).runs).strip()
 
 
+def _is_system_chapter_heading(text: str) -> bool:
+    for marker in SYSTEM_CHAPTER_MARKERS:
+        if text == marker or text.startswith(marker):
+            return True
+    if re.match(r"^[4-9]\s+附录", text):
+        return True
+    return False
+
+
 def validate_overview_docx(path_or_bytes):
     """企业概况不得包含系统生成的章节标题。"""
     if isinstance(path_or_bytes, (bytes, bytearray)):
@@ -36,9 +47,8 @@ def validate_overview_docx(path_or_bytes):
         doc = Document(str(path_or_bytes))
     for paragraph in doc.paragraphs:
         text = paragraph.text.strip()
-        for marker in SYSTEM_CHAPTER_MARKERS:
-            if text == marker or text.startswith(marker):
-                raise ValueError(f"项目概况 Word 中不应包含「{marker}」，请仅填写第 1～3 章。")
+        if _is_system_chapter_heading(text):
+            raise ValueError(f"项目概况 Word 中不应包含「{text}」，请仅填写第 1～3 章。")
     return True
 
 
@@ -67,14 +77,86 @@ def trim_template_front_matter(document):
         body.remove(child)
 
 
-def _append_body_elements(target_doc, source_doc, skip_before_heading=None):
-    """将 source 正文元素追加到 target（不含 sectPr）。"""
+_REL_ID_ATTRS = (qn("r:embed"), qn("r:id"))
+
+
+def _collect_embed_ids(element, ids):
+    for attr in _REL_ID_ATTRS:
+        value = element.get(attr)
+        if value:
+            ids.add(value)
+    for child in element:
+        _collect_embed_ids(child, ids)
+
+
+def _remap_embed_ids(element, id_map):
+    for attr in _REL_ID_ATTRS:
+        old = element.get(attr)
+        if old and old in id_map:
+            element.set(attr, id_map[old])
+    for child in element:
+        _remap_embed_ids(child, id_map)
+
+
+def _part_rel_map(target_doc, source_doc, needed_ids):
+    """将 source 中被引用的部件关系复制到 target，避免 rId 与目标壳层错配。"""
+    mapping = {}
+    for r_id in needed_ids:
+        rel = source_doc.part.rels.get(r_id)
+        if rel is None:
+            continue
+        try:
+            if rel.is_external:
+                mapping[r_id] = target_doc.part.relate_to(rel.target_ref, rel.reltype, is_external=True)
+            else:
+                mapping[r_id] = target_doc.part.relate_to(rel.target_part, rel.reltype)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("复制 Word 关系 %s 失败：%s", r_id, exc)
+    return mapping
+
+
+def _trailing_sect_pr(source_doc):
+    for child in reversed(list(source_doc.element.body)):
+        if child.tag == qn("w:sectPr"):
+            return copy.deepcopy(child)
+        if child.tag == qn("w:p"):
+            p_pr = child.find(qn("w:pPr"))
+            if p_pr is not None:
+                sect = p_pr.find(qn("w:sectPr"))
+                if sect is not None:
+                    return copy.deepcopy(sect)
+    return None
+
+
+def _section_break_paragraph(sect_pr):
+    paragraph = OxmlElement("w:p")
+    p_pr = OxmlElement("w:pPr")
+    p_pr.append(sect_pr)
+    paragraph.append(p_pr)
+    return paragraph
+
+
+def _append_body_elements(
+    target_doc,
+    source_doc,
+    skip_before_heading=None,
+    *,
+    apply_source_section=False,
+):
+    """将 source 正文元素追加到 target（不含末尾 sectPr），并复制关系与分节。"""
     body = target_doc.element.body
     sect = None
     for child in list(body):
         if child.tag == qn("w:sectPr"):
             sect = child
+    insert_at = body.index(sect) if sect is not None else len(body)
+    if apply_source_section:
+        source_sect = _trailing_sect_pr(source_doc)
+        if source_sect is not None:
+            body.insert(insert_at, _section_break_paragraph(source_sect))
+            insert_at += 1
     started = skip_before_heading is None
+    to_insert = []
     for child in list(source_doc.element.body):
         if child.tag == qn("w:sectPr"):
             continue
@@ -86,19 +168,48 @@ def _append_body_elements(target_doc, source_doc, skip_before_heading=None):
                 continue
         if not started:
             continue
-        body.insert(body.index(sect) if sect is not None else len(body), copy.deepcopy(child))
+        clone = copy.deepcopy(child)
+        needed = set()
+        _collect_embed_ids(clone, needed)
+        _remap_embed_ids(clone, _part_rel_map(target_doc, source_doc, needed))
+        to_insert.append(clone)
+    for clone in to_insert:
+        body.insert(insert_at, clone)
+        insert_at += 1
 
 
-def append_docx_file(target_doc, path, skip_before_heading=None):
+def append_docx_file(
+    target_doc,
+    path,
+    skip_before_heading=None,
+    *,
+    apply_source_section=False,
+):
     if not Path(path).is_file():
         return
     source = Document(str(path))
-    _append_body_elements(target_doc, source, skip_before_heading=skip_before_heading)
+    _append_body_elements(
+        target_doc,
+        source,
+        skip_before_heading=skip_before_heading,
+        apply_source_section=apply_source_section,
+    )
 
 
-def append_docx_bytes(target_doc, data: bytes, skip_before_heading=None):
+def append_docx_bytes(
+    target_doc,
+    data: bytes,
+    skip_before_heading=None,
+    *,
+    apply_source_section=False,
+):
     source = Document(BytesIO(data))
-    _append_body_elements(target_doc, source, skip_before_heading=skip_before_heading)
+    _append_body_elements(
+        target_doc,
+        source,
+        skip_before_heading=skip_before_heading,
+        apply_source_section=apply_source_section,
+    )
 
 
 def merge_overview_com(shell_bytes: bytes, overview_bytes: bytes) -> bytes:
@@ -175,9 +286,16 @@ def merge_with_word_com(base_bytes: bytes, inserts: list[tuple[bytes, str | None
         pythoncom.CoUninitialize()
 
 
-def append_appendices_only(base_bytes: bytes, wbst_bytes: bytes | None, support_bytes: bytes | None, use_word_com: bool = True) -> bytes:
-    """在已含正文的 docx 末尾追加第 7 章附录及 WBST、评价支撑信息文件内容。"""
-    appendix_parts: list[tuple[bytes | None, str | None]] = [(None, "7 附录")]
+def append_appendices_only(
+    base_bytes: bytes,
+    wbst_bytes: bytes | None,
+    support_bytes: bytes | None,
+    *,
+    appendix_chapter: int = 7,
+    use_word_com: bool = True,
+) -> bytes:
+    """在已含正文的 docx 末尾追附录章及 WBST、评价支撑信息文件内容。"""
+    appendix_parts: list[tuple[bytes | None, str | None]] = [(None, f"{appendix_chapter} 附录")]
     if wbst_bytes:
         appendix_parts.append((wbst_bytes, "附录A  WBST表格"))
     if support_bytes:
@@ -196,7 +314,7 @@ def append_appendices_only(base_bytes: bytes, wbst_bytes: bytes | None, support_
         if heading:
             doc.add_paragraph(heading)
         if payload:
-            append_docx_bytes(doc, payload)
+            append_docx_bytes(doc, payload, apply_source_section=payload is wbst_bytes)
     buffer = BytesIO()
     doc.save(buffer)
     return buffer.getvalue()

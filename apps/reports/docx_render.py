@@ -24,6 +24,7 @@ from docx.shared import Cm, Mm, Pt
 from docxtpl import DocxTemplate
 
 from apps.reports import docx_merge
+from apps.reports.overview_fill import restore_team_section_from_front
 
 TEMPLATE_PATH = Path(settings.BASE_DIR) / "data" / "templates" / "report" / "report_template.docx"
 SEAL_MARK = "〔印章位置〕"
@@ -286,6 +287,7 @@ def render(report, report_no, enterprise_files=None):
                 buffer = BytesIO()
                 document.save(buffer)
                 shell_bytes = docx_merge.fix_body_section_headers(buffer.getvalue(), header_line)
+            shell_bytes = restore_team_section_from_front(shell_bytes, report["front"])
         document = Document(BytesIO(shell_bytes))
     append_blocks(document, report["tail_blocks"])
 
@@ -297,7 +299,12 @@ def render(report, report_no, enterprise_files=None):
     if merge_mode:
         wbst_bytes = _read_enterprise_file(wbst)
         support_bytes = _read_enterprise_file(support)
-        payload = docx_merge.append_appendices_only(payload, wbst_bytes, support_bytes)
+        payload = docx_merge.append_appendices_only(
+            payload,
+            wbst_bytes,
+            support_bytes,
+            appendix_chapter=report.get("appendix_chapter", 7),
+        )
         if trailer:
             document = Document(BytesIO(payload))
             append_blocks(document, trailer)

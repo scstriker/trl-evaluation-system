@@ -410,10 +410,14 @@ def task_detail(request, assignment_id):
     review_round = assignment.round
     assessment = review_round.assessment
     project = assessment.project
-    items = services.task_items(assignment)
-    opinions = services.opinions_by_item(assignment)
+    can_view_materials = assignment.status in (
+        ExpertAssignment.STATUS_ACCEPTED,
+        ExpertAssignment.STATUS_SUBMITTED,
+    )
+    items = services.task_items(assignment) if can_view_materials else []
+    opinions = services.opinions_by_item(assignment) if can_view_materials else {}
     previous = {}
-    if review_round.number > 1:
+    if can_view_materials and review_round.number > 1:
         prior = assessment.review_rounds.filter(number=review_round.number - 1).first()
         if prior:
             previous = {ri.check_item_id: ri for ri in prior.items.all()}
@@ -456,6 +460,7 @@ def task_detail(request, assignment_id):
             "missing": missing,
             "unexplained": unexplained,
             "editable": assignment.status == ExpertAssignment.STATUS_ACCEPTED,
+            "can_view_materials": can_view_materials,
             "pledge": services.PLEDGE_CLAUSES,
             "active_nav": "tasks",
         },

@@ -125,8 +125,9 @@
             {% csrf_token %}
             <input type="hidden" name="type" value="{{ report_type }}">
             <input type="hidden" name="kind" value="{{ kind }}">
-            <input type="file" name="file" class="input" style="max-width:220px" required>
+            <input type="file" name="file" class="input" style="max-width:220px" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
             <button class="btn secondary sm" type="submit">上传</button>
+            <span class="small muted">须为 .docx Word 文档</span>
           </form>
           {% endif %}
         </div>

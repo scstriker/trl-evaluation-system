@@ -143,6 +143,12 @@ def test_evidence_hash_and_soft_delete(enterprise):
     assert item.active_evidence_count == 1
     with pytest.raises(ValidationError):
         upload_evidence_file(item, enterprise, SimpleUploadedFile("bad.exe", b"x"))
+    with pytest.raises(ValidationError):
+        upload_evidence_file(
+            item,
+            enterprise,
+            SimpleUploadedFile("malware.exe", b"x", content_type="application/pdf"),
+        )
     soft_delete_evidence(evidence, enterprise)
     evidence.refresh_from_db()
     assert evidence.is_deleted is True

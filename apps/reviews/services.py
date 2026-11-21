@@ -240,6 +240,21 @@ def submitted_levels(assessment):
     )
 
 
+def rectify_resubmitted_levels(assessment, review_round):
+    """本轮专家评审退回的级别，企业整改后重新提交（含已审核通过）的级别。"""
+    cutoff = review_round.finalized_at
+    if cutoff is None:
+        return set()
+    failed = set(review_round.items.filter(final_result=FAIL).values_list("check_item__level", flat=True))
+    done = set()
+    for review in assessment.level_reviews.filter(level__in=failed):
+        if review.status not in (LevelReview.STATUS_SUBMITTED, LevelReview.STATUS_PASSED):
+            continue
+        if review.submitted_at and review.submitted_at >= cutoff:
+            done.add(review.level)
+    return done
+
+
 def expert_scope(assessment):
     """本次专家评审的条目：已提交级别中，尚未通过专家评审的条目。"""
     levels = submitted_levels(assessment)
@@ -382,7 +397,7 @@ def on_levels_submitted(assessment, actor):
     if review_round is None:
         return None
     failed_levels = set(review_round.items.filter(final_result=FAIL).values_list("check_item__level", flat=True))
-    resubmitted = set(submitted_levels(assessment))
+    resubmitted = rectify_resubmitted_levels(assessment, review_round)
     if not failed_levels <= resubmitted:
         return None
     review_round.status = ReviewRound.STATUS_CLOSED
