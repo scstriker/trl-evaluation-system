@@ -6,10 +6,9 @@ from apps.reports.models import ReportFrontMatter, ReportModule
 class FrontMatterForm(forms.ModelForm):
     class Meta:
         model = ReportFrontMatter
-        fields = ["compiled_by", "checked_by", "approved_by", "issue_date", "standard_version", *ReportFrontMatter.SECTION_FIELDS]
+        fields = ["compiled_by", "checked_by", "approved_by", "issue_date", "standard_version"]
         widgets = {
             "issue_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            **{field: forms.Textarea(attrs={"rows": 3}) for field in ReportFrontMatter.SECTION_FIELDS},
         }
 
     def __init__(self, *args, **kwargs):

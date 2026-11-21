@@ -97,9 +97,19 @@ def main():
     project.save(update_fields=["name", "applicant", "overview_text", "updated_at"])
     _front_matter_admin(project)
 
-    _upload_bytes(project, EnterpriseProjectFile.KIND_OVERVIEW, "项目概况-自动生成.docx", build_overview_docx())
-    _upload_bytes(project, EnterpriseProjectFile.KIND_SUPPORT, "评价支撑信息-自动生成.docx", build_support_docx())
-    _upload_bytes(project, EnterpriseProjectFile.KIND_WBST, "WBST-自动生成.docx", _wbst_docx())
+    def _build_package_docx() -> bytes:
+        doc = Document()
+        for payload in (build_overview_docx(), _wbst_docx(), build_support_docx()):
+            src = Document(BytesIO(payload))
+            for paragraph in src.paragraphs:
+                text = paragraph.text.strip()
+                if text:
+                    doc.add_paragraph(text)
+        buf = BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    _upload_bytes(project, EnterpriseProjectFile.KIND_PACKAGE, "企业报告材料-自动生成.docx", _build_package_docx())
 
     assessment = project.get_assessment(TRL)
     if assessment.status == Assessment.STATUS_REPORTED:

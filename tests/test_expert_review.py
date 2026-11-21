@@ -326,6 +326,29 @@ def test_rectifying_detail_shows_expert_panel_not_returned_alert(client, enterpr
     assert "以下级别被评价机构退回，请按审核意见修改后重新提交审核：" not in page
 
 
+def test_modified_passed_item_reenters_expert_scope(enterprise, admin_user, experts):
+    """已通过专家评审的条目被修改后，历史 PASS 不再把它排除出新一轮专家范围。"""
+    project, assessment, review_round = start_review(enterprise, admin_user, experts)
+    for assignment in review_round.assignments.all():
+        opine(assignment)
+    services.confirm_unanimous(review_round, admin_user)
+    services.finalize_round(review_round, admin_user)
+    review_round.refresh_from_db()
+    assert review_round.outcome == ReviewRound.OUTCOME_PASSED
+
+    # 尚未出具报告时可直接退回已通过级别；修改内容后重新提交
+    eval_services.return_levels(assessment, admin_user, [1], "需复核已通过条目")
+    item = assessment.items.filter(level=1).order_by("order_index").first()
+    eval_services.evaluate_check_item(
+        item, enterprise, {"result": "satisfied", "statement": "退回后修改的说明"}
+    )
+    eval_services.submit_levels(assessment, enterprise, 1)
+
+    scope_ids = set(services.expert_scope(assessment).values_list("id", flat=True))
+    assert item.id in scope_ids
+    assert services.start_blockers(assessment) == []
+
+
 def test_rectify_staggered_resubmit_admin_passes_first_level(enterprise, admin_user, experts):
     """两级退回后，企业分批重交且管理员先通过第 1 级，仍应能结束整改轮次。"""
     project, assessment, review_round, fail_l1, fail_l2 = _finalize_with_levels_1_and_2_failures(enterprise, admin_user, experts)

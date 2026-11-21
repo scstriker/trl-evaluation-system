@@ -74,22 +74,17 @@ def report_preview(request, project_id):
 
     info_form = ProjectInfoForm(instance=project, admin=admin)
     enterprise_by_kind = enterprise_docs.latest_enterprise_files_by_kind(project)
-    kind_labels = dict(EnterpriseProjectFile.KIND_CHOICES)
-    enterprise_kinds = (
-        EnterpriseProjectFile.KIND_OVERVIEW,
-        EnterpriseProjectFile.KIND_WBST,
-        EnterpriseProjectFile.KIND_SUPPORT,
-    )
+    enterprise_kinds = (EnterpriseProjectFile.KIND_PACKAGE,)
     enterprise_doc_rows = [
         {
             "kind": kind,
-            "label": kind_labels[kind],
+            "label": enterprise_docs.KIND_LABELS[kind],
             "upload": enterprise_by_kind.get(kind),
         }
         for kind in enterprise_kinds
     ]
     enterprise_uploaded_count = sum(1 for kind in enterprise_kinds if enterprise_by_kind.get(kind))
-    enterprise_upload_total = 3
+    enterprise_upload_total = 1
     return render(
         request,
         "reports/report_preview.html",
@@ -295,58 +290,37 @@ def report_list(request):
 
 @admin_required
 def front_matter_edit(request, project_id):
-    from apps.reports.forms import FrontMatterForm, ModuleFormSet
+    from apps.reports.forms import FrontMatterForm
 
     project = get_visible_project_or_404(request.user, project_id)
     front_matter = services.get_front_matter(project)
     report_type = request.GET.get("type") or request.POST.get("type") or Report.TYPE_TRL
     form = FrontMatterForm(request.POST or None, instance=front_matter)
-    modules = ModuleFormSet(request.POST or None, instance=front_matter, prefix="modules")
     if request.method == "POST":
-        if form.is_valid() and modules.is_valid():
+        if form.is_valid():
             with transaction.atomic():
                 front_matter = form.save(commit=False)
                 front_matter.updated_by = request.user
                 front_matter.save()
-                saved = modules.save(commit=False)
-                for order, module in enumerate(saved, start=1):
-                    module.order = module.order or order
-                    module.save()
-                for module in modules.deleted_objects:
-                    module.delete()
-                for order, module in enumerate(front_matter.modules.all(), start=1):
-                    if module.order != order:
-                        module.order = order
-                        module.save(update_fields=["order"])
                 AuditLog.objects.create(
                     actor=request.user,
                     action="report.front_matter",
                     model_name="ReportFrontMatter",
                     object_id=str(front_matter.pk),
-                    object_repr="报告前置信息",
+                    object_repr="封面与扉页",
                     project=project,
-                    after={"changed": form.changed_data, "modules": front_matter.modules.count()},
+                    after={"changed": form.changed_data},
                 )
-            messages.success(request, "报告前置信息已保存。预览和下一次生成的报告会使用新内容。")
+            messages.success(request, "封面与扉页已保存。预览和下一次生成的报告会使用新内容。")
             return redirect(_preview_url(project.id, report_type))
-        messages.error(request, "保存失败：关键技术 / 模块的名称为必填项，日期格式为 年-月-日。")
-    defaults = services._default_sections(
-        project, report_type, services.build_report(project, report_type)["parts"]
-    ) if project.assessments.exists() else {}
+        messages.error(request, "保存失败：请检查日期格式为 年-月-日。")
     return render(
         request,
         "reports/front_matter.html",
         {
             "project": project,
             "form": form,
-            "modules": modules,
-            "defaults": defaults,
             "report_type": report_type,
-            "chapters": [
-                ("1 概况", ["s1_1_1", "s1_1_2", "s1_1_3", "s1_1_4", "s1_1_5", "s1_2_1", "s1_2_2", "s1_2_3", "s1_2_4"]),
-                ("2 评价实施情况", ["s2_1", "s2_3", "s2_4"]),
-                ("3 评价对象研发信息", ["s3_1", "s3_4_software"]),
-            ],
             "active_nav": "reports",
             "tabs": {a.system for a in project.assessments.all()},
         },
@@ -392,7 +366,7 @@ def upload_enterprise_file(request, project_id):
     project = get_visible_project_or_404(request.user, project_id)
     if not is_project_owner(request.user, project):
         raise PermissionDenied("仅申报企业可上传。")
-    kind = request.POST.get("kind", "")
+    kind = request.POST.get("kind", EnterpriseProjectFile.KIND_PACKAGE)
     uploaded = request.FILES.get("file")
     if not uploaded:
         messages.error(request, "请选择文件。")

@@ -114,7 +114,7 @@ def test_front_matter_page(client, enterprise, admin_user):
     assert client.get(f"/reports/projects/{project.id}/front-matter/").status_code == 403
     client.force_login(admin_user)
     page = client.get(f"/reports/projects/{project.id}/front-matter/").content.decode()
-    assert "1.1.1 任务来源" in page and "留空时使用" in page
+    assert "封面与扉页" in page and "1.1.1 任务来源" not in page
     data = {
         "type": "trl",
         "compiled_by": "张三",
@@ -122,23 +122,11 @@ def test_front_matter_page(client, enterprise, admin_user):
         "approved_by": "",
         "issue_date": "2026-10-20",
         "standard_version": "",
-        "s1_1_1": "来源说明",
-        "modules-TOTAL_FORMS": "1",
-        "modules-INITIAL_FORMS": "0",
-        "modules-MIN_NUM_FORMS": "0",
-        "modules-MAX_NUM_FORMS": "1000",
-        "modules-0-name": "新模块",
-        "modules-0-design": "设计说明",
-        "modules-0-trial": "",
-        "modules-0-verification": "",
     }
-    for field in report_services.ReportFrontMatter.SECTION_FIELDS:
-        data.setdefault(field, "")
     response = client.post(f"/reports/projects/{project.id}/front-matter/", data)
     assert response.status_code == 302
     front = report_services.get_front_matter(project)
-    assert front.compiled_by == "张三" and str(front.issue_date) == "2026-10-20" and front.s1_1_1 == "来源说明"
-    assert list(front.modules.values_list("name", flat=True)) == ["新模块"]
+    assert front.compiled_by == "张三" and str(front.issue_date) == "2026-10-20"
     report = report_services.build_report(project, Report.TYPE_TRL)
     assert report["front"]["issue_date_cn"] == "二〇二六年十月"
 

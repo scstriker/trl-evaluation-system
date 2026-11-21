@@ -20,12 +20,10 @@ from tests.test_round2 import _ready_project
 def test_request_blockers_require_enterprise_uploads(enterprise, admin_user):
     project = _ready_project(enterprise, admin_user, seed_enterprise=False)
     blockers = report_services.request_blockers(project, Report.TYPE_TRL)
-    assert report_services.OVERVIEW_MISSING in blockers
-    assert report_services.WBST_MISSING in blockers
-    assert report_services.SUPPORT_MISSING in blockers
+    assert report_services.PACKAGE_MISSING in blockers
     seed_enterprise_report_files(project, enterprise)
     blockers = report_services.request_blockers(project, Report.TYPE_TRL)
-    assert report_services.OVERVIEW_MISSING not in blockers
+    assert report_services.PACKAGE_MISSING not in blockers
 
 
 def test_preview_updates_after_overview_upload(enterprise, admin_user):
@@ -42,7 +40,7 @@ def test_enterprise_upload_rejects_non_docx(enterprise, admin_user):
     project = _ready_project(enterprise, admin_user, seed_enterprise=False)
     pdf = SimpleUploadedFile("wbst.pdf", b"%PDF-1.4", content_type="application/pdf")
     with pytest.raises(ValidationError, match="须上传 .docx"):
-        enterprise_docs.store_upload(project, EnterpriseProjectFile.KIND_WBST, pdf, enterprise)
+        enterprise_docs.store_upload(project, EnterpriseProjectFile.KIND_PACKAGE, pdf, enterprise)
 
 
 def test_append_docx_preserves_inline_image():
@@ -93,5 +91,5 @@ def test_generated_report_merges_enterprise_overview(enterprise, admin_user):
     assert "企业概况独有正文XYZ" in text
     assert "4 评价准则" in text
     assert record.overview_file_id is not None
-    assert record.support_file_id is not None
-    assert record.wbst_file_id is not None
+    assert record.support_file_id is None
+    assert record.wbst_file_id is None

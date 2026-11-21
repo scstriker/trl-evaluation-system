@@ -229,22 +229,13 @@ def test_enterprise_report_preview_materials(client, enterprise, admin_user):
     client.force_login(enterprise)
     page = client.get(url).content.decode()
     assert "page-hero" in page and "upload-card" in page
-    materials = page[page.index('class="upload-card"') :]
-    assert (
-        materials.index('upload-card__title">项目概况')
-        < materials.index("附录A WBST")
-        < materials.index('upload-card__title">评价支撑信息')
-    )
+    assert 'upload-card__title">企业报告材料' in page
+    assert page.count('class="upload-card"') == 1
 
     client.force_login(admin_user)
     admin_page = client.get(url).content.decode()
-    assert "upload-card" in admin_page
-    admin_materials = admin_page[admin_page.index('class="upload-card"') :]
-    assert (
-        admin_materials.index('upload-card__title">项目概况')
-        < admin_materials.index("附录A WBST")
-        < admin_materials.index('upload-card__title">评价支撑信息')
-    )
+    assert 'upload-card__title">企业报告材料' in admin_page
+    assert admin_page.count('class="upload-card"') == 1
 
 
 def test_enterprise_report_preview_blockers(client, enterprise, admin_user):

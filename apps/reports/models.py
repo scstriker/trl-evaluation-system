@@ -155,12 +155,14 @@ def enterprise_file_path(instance, filename):
 
 
 class EnterpriseProjectFile(models.Model):
-    """企业按模板填写后上传的材料（概况、评价支撑信息、附录 A WBST 等）。"""
+    """企业按模板填写后上传的材料（单文件 package 或历史分卷类型）。"""
 
+    KIND_PACKAGE = "package"
     KIND_SUPPORT = "support"
     KIND_OVERVIEW = "overview"
     KIND_WBST = "wbst"
     KIND_CHOICES = [
+        (KIND_PACKAGE, "企业报告材料"),
         (KIND_SUPPORT, "评价支撑信息"),
         (KIND_OVERVIEW, "项目概况"),
         (KIND_WBST, "附录A WBST 表"),

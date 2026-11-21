@@ -1,4 +1,4 @@
-"""生成企业填写用 Word 模板（概况沿用机构原版式，支撑信息为清单表）。"""
+"""生成企业填写用 Word 模板（概况沿用机构原版式，单文件企业报告材料含附录 A/B）。"""
 
 from pathlib import Path
 
@@ -43,5 +43,6 @@ if __name__ == "__main__":
     from comparison_content import warm_enterprise_template
 
     warm_enterprise_template()
-    print(f"已生成：{ENT_DIR / '项目概况-模板.docx'}")
+    print(f"已生成：{ENT_DIR / '项目概况-模板.docx'}（过渡）")
+    print(f"已生成：{ENT_DIR / '企业报告材料-模板.docx'}")
     build_support_template()

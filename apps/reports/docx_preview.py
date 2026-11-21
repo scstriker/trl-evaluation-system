@@ -1,5 +1,6 @@
 """从企业上传的 Word 提取在线预览块（简化，不与 Word 版式完全一致）。"""
 
+import re
 from io import BytesIO
 from pathlib import Path
 
@@ -34,11 +35,13 @@ def _kind_for_level(level: int) -> str:
 
 
 def extract_blocks(file_field, *, limit_paras=MAX_PARAS) -> list[dict]:
-    """从 FileField 或路径读取 docx，转为 preview blocks。"""
+    """从 FileField、路径或 bytes 读取 docx，转为 preview blocks。"""
     if not file_field:
         return []
     try:
-        if hasattr(file_field, "open"):
+        if isinstance(file_field, (bytes, bytearray)):
+            data = bytes(file_field)
+        elif hasattr(file_field, "open"):
             with file_field.open("rb") as f:
                 data = f.read()
         else:
@@ -90,6 +93,25 @@ def extract_blocks(file_field, *, limit_paras=MAX_PARAS) -> list[dict]:
             blocks.append({"kind": "p", "text": "（正文较长，此处仅预览前几页；完整内容见出具 Word。）", "muted": True})
             break
     return blocks
+
+
+_APPENDIX_HEADING = re.compile(r"^(附录|[0-9]+\s+附录)")
+
+
+def extract_blocks_from_appendix(file_field, *, limit_paras=40) -> list[dict]:
+    """从单文件企业材料中截取附录段预览（定位首个附录标题后）。"""
+    blocks = extract_blocks(file_field)
+    if not blocks:
+        return []
+    start = None
+    for index, block in enumerate(blocks):
+        text = (block.get("text") or "").strip()
+        if _APPENDIX_HEADING.match(text) or text.startswith("附录A") or text.startswith("附录B"):
+            start = index
+            break
+    if start is None:
+        return []
+    return blocks[start : start + limit_paras]
 
 
 def appendix_status_block(kind_label: str, filename: str) -> list[dict]:

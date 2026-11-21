@@ -12,14 +12,14 @@ import logging
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.permissions import can_generate_report, is_project_owner
 from apps.audit.models import AuditLog
-from apps.evaluations.models import Assessment, CheckItem, EvaluationTeamMember, LevelReview
+from apps.evaluations.models import Assessment, CheckItem, EvaluationProject, EvaluationTeamMember, LevelReview
 from apps.evaluations.services import get_achieved_level, get_reviews, mrl_enabled
 from apps.evidence.models import EvidenceFile
 from apps.notifications.models import CATEGORY_TODO
@@ -153,17 +153,33 @@ def report_availability(project):
     return result
 
 
-def _enterprise_files(project, overview=None, support=None, wbst=None):
+def _read_enterprise_file_bytes(obj):
+    if not obj or not obj.file:
+        return None
+    obj.file.open("rb")
+    try:
+        return obj.file.read()
+    finally:
+        obj.file.close()
+
+
+def _enterprise_files(project, package=None):
     from apps.reports.enterprise_docs import current_enterprise_file
     from apps.reports.models import EnterpriseProjectFile
 
-    if overview is None:
+    if package is None:
+        package = current_enterprise_file(project, EnterpriseProjectFile.KIND_PACKAGE)
+    overview = support = wbst = None
+    if package is None:
         overview = current_enterprise_file(project, EnterpriseProjectFile.KIND_OVERVIEW)
-    if support is None:
         support = current_enterprise_file(project, EnterpriseProjectFile.KIND_SUPPORT)
-    if wbst is None:
         wbst = current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST)
-    return overview, support, wbst
+    return {
+        "package": package,
+        "overview": overview,
+        "support": support,
+        "wbst": wbst,
+    }
 
 
 def _placeholder_front_blocks():
@@ -171,7 +187,7 @@ def _placeholder_front_blocks():
         {"kind": "h1", "text": "1 概况"},
         {
             "kind": "p",
-            "text": "第 1～3 章待企业下载「项目概况」模板填写并上传；上传后本节将显示企业正文摘要。第 4 章起由系统按审核结果生成。",
+            "text": "第 1～3 章与附录待企业下载「企业报告材料」模板填写并上传；上传后本节将显示企业正文摘要。第 4 章起由系统按审核结果生成。",
             "muted": True,
         },
     ]
@@ -221,7 +237,32 @@ def _preview_appendix_blocks(wbst, support, evidence_files, appendix_chapter):
     return blocks
 
 
-def build_report(project, report_type, wbst=None, overview=None, support=None):
+def _preview_appendix_blocks_from_package(package, evidence_files, appendix_chapter, *, apps_bytes=None):
+    blocks = [{"kind": "h1", "text": f"{appendix_chapter} 附录"}]
+    if apps_bytes:
+        preview_rows = docx_preview.extract_blocks(apps_bytes, limit_paras=40)
+    elif package:
+        preview_rows = docx_preview.extract_blocks_from_appendix(package.file)
+    else:
+        preview_rows = []
+    if preview_rows:
+        blocks += preview_rows[:20]
+    elif package:
+        blocks.append(
+            {
+                "kind": "p",
+                "text": f"附录内容见上传的「{package.original_filename}」；生成报告时将自该 Word 合并。",
+                "muted": True,
+            }
+        )
+    blocks += [
+        {"kind": "h2", "text": "佐证材料 SHA 归档清单"},
+        _evidence_table_block(evidence_files),
+    ]
+    return blocks
+
+
+def build_report(project, report_type, package=None, wbst=None, overview=None, support=None):
     systems = TYPE_SYSTEMS[report_type]
     assessments = {a.system: a for a in project.assessments.all()}
     parts = [_assessment_part(assessments[system]) for system in systems if system in assessments]
@@ -235,13 +276,25 @@ def build_report(project, report_type, wbst=None, overview=None, support=None):
     )
     title = TYPE_TITLES[report_type]
     front = front_context(project, report_type, parts, team)
-    overview, support, wbst = _enterprise_files(project, overview=overview, support=support, wbst=wbst)
-    merge_mode = overview is not None
+    files = _enterprise_files(project, package=package)
+    package = files["package"]
+    overview = files["overview"]
+    wbst = files["wbst"] if wbst is None else wbst
+    support = files["support"] if support is None else support
+    merge_mode = package is not None or overview is not None
 
+    apps_bytes = None
     if merge_mode:
-        head = docx_preview.extract_blocks(overview.file)
+        if package:
+            from apps.reports import docx_merge
+
+            payload = _read_enterprise_file_bytes(package)
+            chapters_bytes, apps_bytes = docx_merge.split_package_docx(payload) if payload else (None, None)
+            head = docx_preview.extract_blocks(chapters_bytes or payload) if (chapters_bytes or payload) else []
+        else:
+            head = docx_preview.extract_blocks(overview.file)
         if not head:
-            head = [{"kind": "p", "text": "（概况文件无法预览，生成报告时将按上传 Word 合并。）", "muted": True}]
+            head = [{"kind": "p", "text": "（企业材料无法预览，生成报告时将按上传 Word 合并。）", "muted": True}]
     else:
         head = _placeholder_front_blocks() + front_blocks(front)
 
@@ -250,9 +303,14 @@ def build_report(project, report_type, wbst=None, overview=None, support=None):
     )
     appendix_chapter = appendix_chapter_number(len(parts))
     appendix_trailer = _appendix_trailer_blocks(evidence_files, merge_mode=merge_mode)
-    appendix_preview = (
-        _preview_appendix_blocks(wbst, support, evidence_files, appendix_chapter) if merge_mode else []
-    )
+    if merge_mode and package:
+        appendix_preview = _preview_appendix_blocks_from_package(
+            package, evidence_files, appendix_chapter, apps_bytes=apps_bytes
+        )
+    elif merge_mode:
+        appendix_preview = _preview_appendix_blocks(wbst, support, evidence_files, appendix_chapter)
+    else:
+        appendix_preview = []
     blocks = head + tail + appendix_preview
 
     return {
@@ -269,7 +327,8 @@ def build_report(project, report_type, wbst=None, overview=None, support=None):
         "appendix_preview_blocks": appendix_preview,
         "appendix_chapter": appendix_chapter,
         "merge_mode": merge_mode,
-        "enterprise_overview": overview,
+        "enterprise_package": package or overview,
+        "enterprise_overview": package or overview,
         "enterprise_support": support,
         "enterprise_wbst": wbst,
         "blocks": blocks,
@@ -569,9 +628,7 @@ def _has_team(project, group):
 
 SELF_TEAM_MISSING = "自评估工作组成员尚未填写（由企业在“编辑报告信息”中填写）"
 THIRD_TEAM_MISSING = "第三方评价组成员尚未填写（由评价机构在“编辑报告信息”中填写）"
-OVERVIEW_MISSING = "尚未上传「项目概况」Word（请下载模板填写后上传）"
-WBST_MISSING = "尚未上传「附录A WBST 表」"
-SUPPORT_MISSING = "尚未上传「评价支撑信息」"
+PACKAGE_MISSING = "请下载并上传企业报告材料（含第1～3章与附录）"
 
 
 def request_blockers(project, report_type):
@@ -582,12 +639,8 @@ def request_blockers(project, report_type):
     blockers = list(report_availability(project)[report_type]["reasons"])
     if not _has_team(project, EvaluationTeamMember.GROUP_SELF):
         blockers.append(SELF_TEAM_MISSING)
-    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_OVERVIEW):
-        blockers.append(OVERVIEW_MISSING)
-    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_WBST):
-        blockers.append(WBST_MISSING)
-    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_SUPPORT):
-        blockers.append(SUPPORT_MISSING)
+    if not current_enterprise_file(project, EnterpriseProjectFile.KIND_PACKAGE):
+        blockers.append(PACKAGE_MISSING)
     return blockers
 
 
@@ -644,33 +697,57 @@ def _make_pdf(docx_bytes):
     return updated, pdf_bytes, converter
 
 
+def _discard_unsaved_files(record):
+    """唯一约束冲突等失败时清理已写入磁盘、尚未入库的文件。"""
+    for field_name in ("file", "pdf_file"):
+        field = getattr(record, field_name, None)
+        if field and field.name:
+            try:
+                field.delete(save=False)
+            except Exception:
+                logger.warning("清理未入库报告文件失败：%s", field.name, exc_info=True)
+
+
 def generate_report(project, report_type, actor):
-    """生成新版本报告。Word 排版与 PDF 转换在数据库事务之外完成，避免长时间占用写锁。"""
+    """生成新版本报告。Word 排版与 PDF 转换在数据库事务之外完成，避免长时间占用写锁。
+
+    版本号在短事务内用项目行锁分配；若仍撞唯一约束则清理孤儿文件并重试。
+    """
     validate_can_generate(project, report_type, actor)
-    overview, support, wbst = _enterprise_files(project)
-    report = build_report(project, report_type, overview=overview, support=support, wbst=wbst)
+    files = _enterprise_files(project)
+    report = build_report(project, report_type, package=files["package"], overview=files["overview"])
     now = timezone.localtime()
-    max_version = project.reports.filter(report_type=report_type).aggregate(v=Max("version"))["v"] or 0
-    version = max_version + 1
     report_no = f"{base_report_no(project, now)}-{TYPE_SUFFIX[report_type]}"
-    enterprise_files = {"overview": overview, "support": support, "wbst": wbst}
+    enterprise_files = dict(files)
     payload, pdf_bytes, converter = _make_pdf(docx_render.render(report, report_no, enterprise_files=enterprise_files))
-    with transaction.atomic():
-        return _store_report(
-            project,
-            report_type,
-            actor,
-            report,
-            now,
-            version,
-            report_no,
-            payload,
-            pdf_bytes,
-            converter,
-            wbst=wbst,
-            overview=overview,
-            support=support,
-        )
+
+    last_error = None
+    for _attempt in range(3):
+        try:
+            with transaction.atomic():
+                locked = EvaluationProject.objects.select_for_update().get(pk=project.pk)
+                max_version = locked.reports.filter(report_type=report_type).aggregate(v=Max("version"))["v"] or 0
+                version = max_version + 1
+                pkg = files["package"]
+                return _store_report(
+                    locked,
+                    report_type,
+                    actor,
+                    report,
+                    now,
+                    version,
+                    report_no,
+                    payload,
+                    pdf_bytes,
+                    converter,
+                    wbst=files["wbst"] if not pkg else None,
+                    overview=pkg or files["overview"],
+                    support=files["support"] if not pkg else None,
+                )
+        except IntegrityError as exc:
+            last_error = exc
+            logger.warning("报告版本冲突，准备重试：project=%s type=%s", project.id, report_type)
+    raise ValidationError("报告版本号冲突，请重试生成。") from last_error
 
 
 def _store_report(
@@ -706,13 +783,17 @@ def _store_report(
         overview_file=overview,
         support_file=support,
     )
-    record.file.save(filename, ContentFile(payload), save=False)
-    if pdf_bytes:
-        record.pdf_filename = filename[:-5] + ".pdf"
-        record.pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
-        record.pdf_converter = converter
-        record.pdf_file.save(record.pdf_filename, ContentFile(pdf_bytes), save=False)
-    record.save()
+    try:
+        record.file.save(filename, ContentFile(payload), save=False)
+        if pdf_bytes:
+            record.pdf_filename = filename[:-5] + ".pdf"
+            record.pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+            record.pdf_converter = converter
+            record.pdf_file.save(record.pdf_filename, ContentFile(pdf_bytes), save=False)
+        record.save()
+    except Exception:
+        _discard_unsaved_files(record)
+        raise
 
     if not project.report_no:
         project.report_no = base_report_no(project, now)

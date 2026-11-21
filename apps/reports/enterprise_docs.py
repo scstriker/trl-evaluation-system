@@ -11,22 +11,18 @@ from django.utils.text import get_valid_filename
 from docx import Document
 
 from apps.evidence.services import ALLOWED_EXTENSIONS, _file_extension, _validate_uploaded_file
-from apps.reports.docx_merge import validate_overview_docx
+from apps.reports.docx_merge import validate_package_docx
 from apps.reports.models import EnterpriseProjectFile
 
 BASE_DIR = Path(settings.BASE_DIR)
 TEMPLATE_DIR = BASE_DIR / "data" / "templates" / "enterprise"
 
 TEMPLATE_FILES = {
-    "support": "评价支撑信息-模板.docx",
-    "overview": "项目概况-模板.docx",
-    "wbst": "附录A-WBST-模板.docx",
+    "package": "企业报告材料-模板.docx",
 }
 
 KIND_LABELS = {
-    "support": "评价支撑信息",
-    "overview": "项目概况",
-    "wbst": "附录A WBST 表",
+    "package": "企业报告材料",
 }
 
 
@@ -84,9 +80,9 @@ def store_upload(project, kind, uploaded_file, actor):
     if ext != ".docx":
         raise ValidationError(f"「{KIND_LABELS[kind]}」须上传 .docx 格式的 Word 文档（请下载模板填写）。")
     payload = validate_enterprise_docx(uploaded_file)
-    if kind == EnterpriseProjectFile.KIND_OVERVIEW:
+    if kind == EnterpriseProjectFile.KIND_PACKAGE:
         try:
-            validate_overview_docx(payload)
+            validate_package_docx(payload)
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
     if ext not in ALLOWED_EXTENSIONS:

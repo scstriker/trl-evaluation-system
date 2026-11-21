@@ -1,7 +1,9 @@
 """在企业「项目概况」原版式模板上填入正文（保留 Heading 1 / 样式「1」等，与正式报告一致）。"""
 
 import copy
+import logging
 import shutil
+import sys
 import tempfile
 from io import BytesIO
 from pathlib import Path
@@ -13,9 +15,23 @@ from docx.oxml.ns import nsdecls, qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+logger = logging.getLogger(__name__)
+
 BASE = Path(settings.BASE_DIR)
 SOURCE = BASE / "data" / "templates" / "report" / "source" / "技术就绪度评价报告_原版式空白模板.docx"
 ENTERPRISE_OVERVIEW = BASE / "data" / "templates" / "enterprise" / "项目概况-模板.docx"
+ENTERPRISE_PACKAGE = BASE / "data" / "templates" / "enterprise" / "企业报告材料-模板.docx"
+WBST_TEMPLATE = BASE / "data" / "templates" / "enterprise" / "附录A-WBST-模板.docx"
+SUPPORT_TEMPLATE = BASE / "data" / "templates" / "enterprise" / "评价支撑信息-模板.docx"
+GOLD_WBST = Path(
+    r"C:\Users\61973\Desktop\Project\261115-TRLDemo-第四次修改"
+    r"\发陈实-技术就绪度软件相关\发陈实-技术就绪度软件相关"
+    r"\表c.1 开发研究项目WBST模板 - V2.docx"
+)
+
+PACKAGE_INSTRUCTION = "请填写第1～3章与附录A/B；勿增写第4章及以后（由系统生成）。"
+APPENDIX_A_HEADING = "附录A  WBST表格"
+APPENDIX_B_HEADING = "附录B  评价支撑信息清单"
 
 BODY_PPR = (
     f'<w:pPr {nsdecls("w")}><w:spacing w:line="360" w:lineRule="auto"/>'
@@ -157,42 +173,163 @@ def restore_team_section_from_front(docx_bytes: bytes, front: dict) -> bytes:
     return buf.getvalue()
 
 
-def ensure_enterprise_overview_template():
+def _normalized_heading(text: str) -> str:
+    return text.replace("\u3000", " ").replace("\t", " ").strip()
+
+
+def _is_system_chapter_start(text: str) -> bool:
+    normalized = _normalized_heading(text)
+    if normalized.startswith("4 ") and "评价准则" in normalized:
+        return True
+    for marker in ("5 技术就绪度评价", "5 制造成熟度评价", "6 总结", "7 附录"):
+        if normalized == marker or normalized.startswith(marker):
+            return True
+    if normalized.startswith("附录A") or normalized.startswith("附录B"):
+        return True
+    return False
+
+
+def _trim_source_document(doc: Document) -> None:
+    """保留第 1～3 章正文，去掉封面/目录及第 4 章及以后（若有）。"""
+    body = doc.element.body
+    children = list(body)
+    start = None
+    for idx, child in enumerate(children):
+        if child.tag != qn("w:p"):
+            continue
+        if _normalized_heading(_text_of(Paragraph(child, doc))) == "1 概况":
+            start = idx
+            break
+    end = None
+    for idx, child in enumerate(children):
+        if child.tag != qn("w:p"):
+            continue
+        if _is_system_chapter_start(_text_of(Paragraph(child, doc))):
+            end = idx
+            break
+    sect = next((c for c in reversed(children) if c.tag == qn("w:sectPr")), None)
+    if start is not None:
+        for child in children[:start]:
+            if child is not sect:
+                body.remove(child)
+    if end is not None:
+        for child in children[end:]:
+            if child is not sect:
+                body.remove(child)
+
+
+def _write_trimmed_overview_docx(dest: Path) -> None:
     if not SOURCE.is_file():
         raise FileNotFoundError(SOURCE)
-    ENTERPRISE_OVERVIEW.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp) / "t.docx"
-        shutil.copy(SOURCE, work)
-        doc = Document(work)
-        body = doc.element.body
-        children = list(body)
-        start = None
-        for idx, child in enumerate(children):
-            if child.tag != qn("w:p"):
-                continue
-            if _text_of(Paragraph(child, doc)) == "1 概况":
-                start = idx
-                break
-        end = None
-        for idx, child in enumerate(children):
-            if child.tag != qn("w:p"):
-                continue
-            t = _text_of(Paragraph(child, doc))
-            if t.startswith("4 ") and "评价准则" in t:
-                end = idx
-                break
-        sect = next((c for c in reversed(children) if c.tag == qn("w:sectPr")), None)
-        if start is not None:
-            for child in children[:start]:
-                if child is not sect:
-                    body.remove(child)
-        if end is not None:
-            for child in children[end:]:
-                if child is not sect:
-                    body.remove(child)
-        doc.save(ENTERPRISE_OVERVIEW)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(SOURCE, dest)
+    doc = Document(dest)
+    _trim_source_document(doc)
+    doc.save(dest)
+
+
+def _prepend_bold_instruction(doc: Document, text: str) -> None:
+    para = doc.add_paragraph()
+    run = para.add_run(text)
+    run.bold = True
+    blank = doc.add_paragraph()
+    body = doc.element.body
+    for element in (para._p, blank._p):
+        body.remove(element)
+    body.insert(0, blank._p)
+    body.insert(0, para._p)
+
+
+def _wbst_source_path() -> Path:
+    if WBST_TEMPLATE.is_file():
+        return WBST_TEMPLATE
+    if GOLD_WBST.is_file():
+        return GOLD_WBST
+    raise FileNotFoundError(f"未找到 WBST 模板：{WBST_TEMPLATE} 或 {GOLD_WBST}")
+
+
+def _support_table_only_bytes() -> bytes:
+    if SUPPORT_TEMPLATE.is_file():
+        source = Document(SUPPORT_TEMPLATE)
+    else:
+        source = Document()
+        source.add_table(rows=2, cols=4)
+        headers = ["编号", "相关文件（佐证材料）", "关联细则", "备注"]
+        for i, label in enumerate(headers):
+            source.tables[0].rows[0].cells[i].text = label
+        source.tables[0].rows[1].cells[0].text = "（示例）"
+    out = Document()
+    body = out.element.body
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
+    for child in source.element.body:
+        if child.tag == qn("w:tbl"):
+            body.append(copy.deepcopy(child))
+    sect = next((c for c in reversed(list(source.element.body)) if c.tag == qn("w:sectPr")), None)
+    if sect is not None:
+        body.append(copy.deepcopy(sect))
+    buffer = BytesIO()
+    out.save(buffer)
+    return buffer.getvalue()
+
+
+def _append_appendices_python(base_bytes: bytes, wbst_bytes: bytes, support_bytes: bytes) -> bytes:
+    from apps.reports.docx_merge import append_docx_bytes
+
+    doc = Document(BytesIO(base_bytes))
+    doc.add_paragraph(APPENDIX_A_HEADING)
+    append_docx_bytes(doc, wbst_bytes, apply_source_section=True)
+    doc.add_paragraph(APPENDIX_B_HEADING)
+    append_docx_bytes(doc, support_bytes)
+    buffer = BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def ensure_enterprise_overview_template():
+    _write_trimmed_overview_docx(ENTERPRISE_OVERVIEW)
     return ENTERPRISE_OVERVIEW
+
+
+def ensure_enterprise_package_template(*, use_word_com: bool = True) -> Path:
+    """生成企业单文件填写模板：第 1～3 章 + 附录 A/B（高保真 Word COM 合并）。"""
+    ensure_enterprise_overview_template()
+    wbst_bytes = _wbst_source_path().read_bytes()
+    support_bytes = _support_table_only_bytes()
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        work = Path(tmp.name)
+    try:
+        shutil.copy(ENTERPRISE_OVERVIEW, work)
+        doc = Document(work)
+        _prepend_bold_instruction(doc, PACKAGE_INSTRUCTION)
+        buffer = BytesIO()
+        doc.save(buffer)
+        base_bytes = buffer.getvalue()
+
+        merged = base_bytes
+        if use_word_com and sys.platform == "win32":
+            try:
+                from apps.reports.docx_merge import _merge_appendix_parts_word
+
+                merged = _merge_appendix_parts_word(
+                    base_bytes, [(wbst_bytes, APPENDIX_A_HEADING)]
+                )
+                merged = _merge_appendix_parts_word(
+                    merged, [(support_bytes, APPENDIX_B_HEADING)]
+                )
+            except Exception as exc:
+                logger.warning("Word COM 生成企业报告材料模板失败，回退 python-docx：%s", exc)
+                merged = _append_appendices_python(base_bytes, wbst_bytes, support_bytes)
+        else:
+            merged = _append_appendices_python(base_bytes, wbst_bytes, support_bytes)
+
+        ENTERPRISE_PACKAGE.parent.mkdir(parents=True, exist_ok=True)
+        ENTERPRISE_PACKAGE.write_bytes(merged)
+    finally:
+        work.unlink(missing_ok=True)
+    return ENTERPRISE_PACKAGE
 
 
 def _drop_from_heading(doc, heading_text):

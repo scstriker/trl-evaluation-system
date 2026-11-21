@@ -255,13 +255,47 @@ def rectify_resubmitted_levels(assessment, review_round):
     return done
 
 
+def _evidence_fingerprint(item):
+    return [
+        {"id": str(evidence.id), "sha256": evidence.sha256}
+        for evidence in item.evidence_files.all()
+        if not evidence.is_deleted
+    ]
+
+
+def _pass_still_binding(item, round_item):
+    """历史 PASS 仅在条目自评内容与佐证未相对留档发生变化时，才继续排除出新一轮专家范围。"""
+    if round_item.final_result != PASS:
+        return False
+    if (
+        item.result != round_item.snap_result
+        or item.statement != round_item.snap_statement
+        or item.support_info != round_item.snap_support_info
+    ):
+        return False
+    current = {(entry["id"], entry["sha256"]) for entry in _evidence_fingerprint(item)}
+    snapped = {
+        (str(entry.get("id", "")), entry.get("sha256", ""))
+        for entry in (round_item.snap_evidence or [])
+    }
+    return current == snapped
+
+
 def expert_scope(assessment):
-    """本次专家评审的条目：已提交级别中，尚未通过专家评审的条目。"""
+    """本次专家评审的条目：已提交级别中，尚未通过专家评审（或通过后已改内容）的条目。"""
     levels = submitted_levels(assessment)
     if not levels:
         return assessment.items.none()
     results = latest_results(assessment)
-    passed = [item_id for item_id, ri in results.items() if ri.final_result == PASS]
+    items = {
+        item.id: item
+        for item in assessment.items.filter(id__in=results.keys()).prefetch_related("evidence_files")
+    }
+    passed = [
+        item_id
+        for item_id, round_item in results.items()
+        if item_id in items and _pass_still_binding(items[item_id], round_item)
+    ]
     return assessment.items.filter(level__in=levels).exclude(id__in=passed)
 
 

@@ -48,7 +48,7 @@
       {% endif %}
       <details class="disclosure">
         <summary>报告如何生成与上传</summary>
-        <p class="mt-0">第 4 章起由系统按审核结果生成；第 1～3 章及附录 A/B 来自企业上传的 Word 材料（上传后预览会更新）。未上传概况时仍显示占位说明，并可参考管理员「编辑前置信息」的草稿。{% if generate_blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</p>
+        <p class="mt-0">下载「企业报告材料」模板填写后上传；合并顺序为封面扉页 + 企业材料第 1～3 章 + 系统第 4 章起 + 企业附录。未上传时预览含占位说明；封面编制/审核/批准等由管理员在「编辑封面扉页」维护。{% if generate_blockers %}未达到生成条件时，预览仅包含已审核通过的级别。{% endif %}</p>
         {% if is_admin %}<p class="mb-0">{% if pdf_tool %}PDF 由本机 {{ pdf_tool }} 转换。{% else %}本机未检测到 Word 或 LibreOffice，只生成 Word 报告。{% endif %}</p>{% endif %}
       </details>
     </div>
@@ -62,7 +62,7 @@
         {% else %}
         <button class="btn secondary" type="button" data-modal-open="blocker-modal">生成 Word 报告</button>
         {% endif %}
-        <a class="btn secondary" href="{% url 'reports:front_matter' project.id %}?type={{ report_type }}">编辑前置信息</a>
+        <a class="btn secondary" href="{% url 'reports:front_matter' project.id %}?type={{ report_type }}">编辑封面扉页</a>
       {% endif %}
       {% if can_edit_info %}<button class="btn secondary" type="button" data-modal-open="info-modal">编辑报告信息</button>{% endif %}
       {% if is_owner %}
@@ -132,15 +132,15 @@
   {% if is_owner or is_admin %}
   <div class="card no-print page-section">
     <div class="card-head card-head--stack">
-      <h2>企业材料模板</h2>
+      <h2>企业报告材料</h2>
       <ul class="checklist">
-        <li>「项目概况」含第 1～3 章（勿写第 4 章及以后）</li>
-        <li>「附录 A WBST」须用官方 WBST 表</li>
-        <li>「评价支撑信息」对应附录 B；三类齐全后方可申请导出</li>
+        <li>一份 Word 含第 1～3 章与附录 A/B（勿写第 4 章及以后）</li>
+        <li>附录 A 须使用系统提供的 WBST 表（表 c.1 V2）</li>
+        <li>上传后方可申请导出</li>
       </ul>
       <details class="disclosure" style="margin:0;width:100%">
         <summary>填写与上传说明</summary>
-        <p class="mt-0 mb-0">请下载三类模板填写后上传。上传后在线预览会更新；须为 .docx 文件。</p>
+        <p class="mt-0 mb-0">请下载模板填写后上传。上传后在线预览会更新；须为 .docx 文件。出具报告时按封面扉页 → 企业第 1～3 章 → 系统第 4 章起 → 企业附录合并。</p>
       </details>
     </div>
     <div class="card-body">
@@ -196,9 +196,11 @@
             <td class="sha-cell">{{ r.sha256|slice:":16" }}…{% if r.pdf_sha256 %}<br>{{ r.pdf_sha256|slice:":16" }}…{% endif %}</td>
             <td class="nowrap">
               <a class="btn secondary sm" href="{% url 'reports:download_report' r.id %}">Word</a>
-              {% if r.overview_file %}<a class="btn ghost sm" href="{% url 'reports:download_report_overview' r.id %}">概况</a>{% endif %}
+              {% if r.overview_file %}<a class="btn ghost sm" href="{% url 'reports:download_report_overview' r.id %}">企业材料</a>
+              {% else %}
               {% if r.wbst_file %}<a class="btn ghost sm" href="{% url 'reports:download_report_wbst' r.id %}">WBST</a>{% endif %}
               {% if r.support_file %}<a class="btn ghost sm" href="{% url 'reports:download_report_support' r.id %}">支撑</a>{% endif %}
+              {% endif %}
               {% if r.pdf_file %}<a class="btn secondary sm" href="{% url 'reports:download_report_pdf' r.id %}">PDF</a>
               {% elif is_admin and pdf_tool %}<form method="post" action="{% url 'reports:make_pdf' r.id %}" style="display:inline">{% csrf_token %}<button class="btn ghost sm" type="submit">生成 PDF</button></form>
               {% else %}<span class="small muted" title="本机未检测到 Word 或 LibreOffice">无 PDF</span>{% endif %}

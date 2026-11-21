@@ -5,9 +5,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from apps.accounts.models import SystemConfig
 from apps.audit.models import AuditLog
 
+# 合法 1×1 红底 PNG（可被 python-docx / 解码器完整打开）
 PNG_1PX = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-    b"\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    b"\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 
 
@@ -34,6 +35,16 @@ def test_settings_validation_and_seal(client, admin_user):
     fake = SimpleUploadedFile("seal.png", b"not a png", content_type="image/png")
     response = _post(client, seal_upload=fake)
     assert "PNG 格式" in response.content.decode()
+    assert not SystemConfig.get().seal_image
+
+    # 仅文件头合法、内容损坏的 PNG 也应拒绝，避免后续出报告崩溃
+    truncated = SimpleUploadedFile(
+        "seal.png",
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+        content_type="image/png",
+    )
+    response = _post(client, seal_upload=truncated)
+    assert "无法解码" in response.content.decode()
     assert not SystemConfig.get().seal_image
 
     response = _post(client, seal_upload=SimpleUploadedFile("seal.png", PNG_1PX, content_type="image/png"))

@@ -138,6 +138,37 @@ class ResetPasswordForm(forms.Form):
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SEAL_MAX_BYTES = 1024 * 1024
+SEAL_MAX_PIXELS = 4000
+
+
+def validate_seal_png(payload: bytes):
+    """校验印章可被完整解码为 PNG，避免仅文件头合法导致报告生成时崩溃。"""
+    from io import BytesIO
+
+    from docx import Document
+    from docx.shared import Mm
+
+    if not payload.startswith(PNG_SIGNATURE):
+        raise forms.ValidationError("印章图片须为 PNG 格式（建议透明背景）。")
+    try:
+        document = Document()
+        document.add_paragraph().add_run().add_picture(BytesIO(payload), width=Mm(10))
+    except Exception as exc:
+        raise forms.ValidationError("印章图片无法解码，请上传完整可用的 PNG（建议透明背景）。") from exc
+    try:
+        from PIL import Image
+
+        image = Image.open(BytesIO(payload))
+        image.load()
+        width, height = image.size
+        if width > SEAL_MAX_PIXELS or height > SEAL_MAX_PIXELS:
+            raise forms.ValidationError(f"印章图片边长不能超过 {SEAL_MAX_PIXELS} 像素。")
+    except forms.ValidationError:
+        raise
+    except ImportError:
+        pass
+    except Exception as exc:
+        raise forms.ValidationError("印章图片无法解码，请上传完整可用的 PNG（建议透明背景）。") from exc
 
 
 class SystemConfigForm(forms.ModelForm):
@@ -172,8 +203,7 @@ class SystemConfigForm(forms.ModelForm):
             return upload
         if upload.size > SEAL_MAX_BYTES:
             raise forms.ValidationError("印章图片不能超过 1MB。")
-        head = upload.read(8)
+        payload = upload.read()
         upload.seek(0)
-        if head != PNG_SIGNATURE:
-            raise forms.ValidationError("印章图片须为 PNG 格式（建议透明背景）。")
+        validate_seal_png(payload)
         return upload

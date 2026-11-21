@@ -39,17 +39,191 @@ def _is_system_chapter_heading(text: str) -> bool:
     return False
 
 
-def validate_overview_docx(path_or_bytes):
-    """企业概况不得包含系统生成的章节标题。"""
+def _is_allowed_enterprise_appendix_heading(text: str) -> bool:
+    if text.startswith("附录"):
+        return True
+    if re.match(r"^[0-9]+\s+附录", text):
+        return True
+    return False
+
+
+def validate_package_docx(path_or_bytes):
+    """企业报告材料不得包含系统生成的正文章节（第 4 章起），附录标题允许。"""
     if isinstance(path_or_bytes, (bytes, bytearray)):
         doc = Document(BytesIO(path_or_bytes))
     else:
         doc = Document(str(path_or_bytes))
     for paragraph in doc.paragraphs:
         text = paragraph.text.strip()
-        if _is_system_chapter_heading(text):
-            raise ValueError(f"项目概况 Word 中不应包含「{text}」，请仅填写第 1～3 章。")
+        if not text or _is_allowed_enterprise_appendix_heading(text):
+            continue
+        for marker in SYSTEM_CHAPTER_MARKERS:
+            if marker == "7 附录":
+                continue
+            if text == marker or text.startswith(marker):
+                raise ValueError(f"企业报告材料中不应包含「{text}」，请仅填写第 1～3 章与附录。")
     return True
+
+
+def validate_overview_docx(path_or_bytes):
+    """兼容旧分卷上传：等同 package 校验。"""
+    return validate_package_docx(path_or_bytes)
+
+
+def _is_appendix_split_heading(text: str) -> bool:
+    text = text.strip()
+    if not text:
+        return False
+    if text.startswith("附录A"):
+        return True
+    if text.startswith("附录A  WBST") or text == "附录A  WBST":
+        return True
+    if re.match(r"^[0-9]+\s+附录", text):
+        return True
+    if text == "附录" or text.startswith("附录"):
+        return True
+    return False
+
+
+def _find_appendix_body_index(source_doc) -> int | None:
+    for idx, child in enumerate(source_doc.element.body):
+        if child.tag != qn("w:p"):
+            continue
+        if _is_appendix_split_heading(_paragraph_text(child, source_doc)):
+            return idx
+    return None
+
+
+def _subset_docx_bytes(source_bytes: bytes, keep_start: int, keep_end: int | None = None) -> bytes:
+    doc = Document(BytesIO(source_bytes))
+    body = doc.element.body
+    children = list(body)
+    keep_end = len(children) if keep_end is None else keep_end
+    sect = None
+    for child in reversed(children):
+        if child.tag == qn("w:sectPr"):
+            sect = child
+            break
+    for idx in range(len(children) - 1, -1, -1):
+        if keep_start <= idx < keep_end:
+            continue
+        if children[idx] is sect:
+            continue
+        body.remove(children[idx])
+    buffer = BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def _split_package_python(payload: bytes, split_idx: int) -> tuple[bytes, bytes]:
+    chapters = _subset_docx_bytes(payload, 0, split_idx)
+    appendices = _subset_docx_bytes(payload, split_idx, None)
+    return chapters, appendices
+
+
+def _split_package_com(payload: bytes, split_start: int) -> tuple[bytes, bytes]:
+    import pythoncom
+    import shutil
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    word = None
+    try:
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        with tempfile.TemporaryDirectory() as tmp:
+            full = Path(tmp) / "full.docx"
+            full.write_bytes(payload)
+            part1 = Path(tmp) / "chapters.docx"
+            part2 = Path(tmp) / "appendices.docx"
+            shutil.copy(full, part1)
+            shutil.copy(full, part2)
+
+            doc1 = word.Documents.Open(str(part1), ReadOnly=False, AddToRecentFiles=False, Visible=False)
+            try:
+                doc1.Range(split_start, doc1.Content.End).Delete()
+                doc1.Save()
+            finally:
+                doc1.Close(False)
+
+            doc2 = word.Documents.Open(str(part2), ReadOnly=False, AddToRecentFiles=False, Visible=False)
+            try:
+                doc2.Range(0, split_start).Delete()
+                doc2.Save()
+            finally:
+                doc2.Close(False)
+
+            return part1.read_bytes(), part2.read_bytes()
+    finally:
+        if word is not None:
+            word.Quit()
+        pythoncom.CoUninitialize()
+
+
+def split_package_docx(path_or_bytes) -> tuple[bytes, bytes | None]:
+    """Split enterprise package into (chapters_1_3, appendices_or_None).
+
+    Split at first paragraph whose text starts with '附录A' or matches '附录A  WBST' or
+    '^[0-9]+\\s+附录' or equals/startswith '附录'. Prefer COM-based split on win32 for
+    fidelity; python-docx fallback by cloning body elements into two Documents.
+    If no appendix marker, return (full_bytes, None).
+    """
+    if isinstance(path_or_bytes, (bytes, bytearray)):
+        payload = bytes(path_or_bytes)
+    else:
+        payload = Path(path_or_bytes).read_bytes()
+
+    split_idx = _find_appendix_body_index(Document(BytesIO(payload)))
+    if split_idx is None:
+        return payload, None
+
+    if sys.platform == "win32":
+        try:
+            import pythoncom
+            import win32com.client
+
+            pythoncom.CoInitialize()
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    full = Path(tmp) / "full.docx"
+                    full.write_bytes(payload)
+                    doc = word.Documents.Open(str(full), ReadOnly=False, AddToRecentFiles=False, Visible=False)
+                    try:
+                        split_start = None
+                        for para in doc.Paragraphs:
+                            text = para.Range.Text.strip().rstrip("\x07")
+                            if _is_appendix_split_heading(text):
+                                split_start = para.Range.Start
+                                break
+                    finally:
+                        doc.Close(False)
+                    if split_start is not None:
+                        return _split_package_com(payload, split_start)
+            finally:
+                word.Quit()
+                pythoncom.CoUninitialize()
+        except Exception as exc:
+            logger.warning("Word COM 拆分企业材料失败，回退 python-docx：%s", exc)
+
+    return _split_package_python(payload, split_idx)
+
+
+def append_enterprise_part(base_bytes: bytes, part_bytes: bytes, *, use_word_com: bool = True) -> bytes:
+    """在文末插入企业 Word 片段，不注入附录章标题。"""
+    if use_word_com and sys.platform == "win32":
+        try:
+            return merge_with_word_com(base_bytes, [(part_bytes, None)])
+        except Exception as exc:
+            logger.warning("Word COM 插入企业附录失败，回退 python-docx：%s", exc)
+    doc = Document(BytesIO(base_bytes))
+    append_docx_bytes(doc, part_bytes)
+    buffer = BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 
 def trim_template_front_matter(document):

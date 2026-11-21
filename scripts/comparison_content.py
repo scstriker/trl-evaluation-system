@@ -6,7 +6,11 @@ from django.conf import settings
 from docx import Document
 from pathlib import Path
 
-from apps.reports.overview_fill import ensure_enterprise_overview_template, fill_overview_bytes
+from apps.reports.overview_fill import (
+    ensure_enterprise_overview_template,
+    ensure_enterprise_package_template,
+    fill_overview_bytes,
+)
 
 BASE = Path(settings.BASE_DIR)
 
@@ -97,5 +101,6 @@ def build_support_docx() -> bytes:
 
 
 def warm_enterprise_template():
-    """部署时生成/刷新企业概况模板文件。"""
+    """部署时生成/刷新企业填写模板（概况过渡文件 + 单文件企业报告材料）。"""
     ensure_enterprise_overview_template()
+    ensure_enterprise_package_template()

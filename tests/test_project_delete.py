@@ -17,6 +17,7 @@ from apps.reports import enterprise_docs
 from apps.reports.services import generate_report
 from apps.reports.models import EnterpriseProjectFile, Report
 from apps.rules.systems import TRL
+from tests.report_enterprise_fixtures import minimal_docx
 from tests.test_core_flow import fill, make_project
 from tests.test_round2 import _ready_project
 
@@ -129,12 +130,14 @@ def test_purge_removes_records_and_files_but_keeps_audit(enterprise, admin_user)
     project = _ready_project(enterprise, admin_user)
     item = project.get_assessment(TRL).items.first()
     report = generate_report(project, Report.TYPE_TRL, admin_user)
+    from tests.report_enterprise_fixtures import package_docx
+
     enterprise_docs.store_upload(
         project,
-        EnterpriseProjectFile.KIND_WBST,
+        EnterpriseProjectFile.KIND_PACKAGE,
         SimpleUploadedFile(
-            "wbst.docx",
-            b"PK wbst",
+            "package.docx",
+            package_docx(wbst_note="wbst-purge-test"),
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ),
         enterprise,

@@ -108,6 +108,8 @@ def _float_picture(run, offset_y):
 
 
 def _place_seal(document):
+    from django.core.exceptions import ValidationError
+
     for paragraph in document.paragraphs:
         if paragraph.text.strip() != SEAL_MARK:
             continue
@@ -117,7 +119,12 @@ def _place_seal(document):
         path = _seal_path()
         if path:
             run.text = ""
-            run.add_picture(path, width=SEAL_WIDTH)
+            try:
+                run.add_picture(path, width=SEAL_WIDTH)
+            except Exception as exc:
+                raise ValidationError(
+                    "系统印章图片损坏或无法读取，请到系统设置重新上传可用的 PNG 印章后再生成报告。"
+                ) from exc
             # 印章中心落在下方“出具单位 / 日期”两行之间
             height = int(run._r.find(".//" + qn("wp:extent")).get("cy"))
             _float_picture(run, Mm(14) - height // 2)
@@ -252,38 +259,48 @@ def _read_enterprise_file(obj):
 
 def render(report, report_no, enterprise_files=None):
     enterprise_files = enterprise_files or {}
+    package = enterprise_files.get("package")
     overview = enterprise_files.get("overview")
     wbst = enterprise_files.get("wbst")
     support = enterprise_files.get("support")
-    merge_mode = bool(overview)
+    merge_mode = bool(package) or bool(overview)
 
     template = DocxTemplate(str(TEMPLATE_PATH))
     template.render(template_context(report["front"], report_no), autoescape=True)
     document = template.docx
     _place_seal(document)
 
+    package_bytes = None
+    apps_bytes = None
+    if package:
+        package_bytes = _read_enterprise_file(package)
+        if package_bytes:
+            package_bytes, apps_bytes = docx_merge.split_package_docx(package_bytes)
+    elif overview:
+        package_bytes = _read_enterprise_file(overview)
+
     buffer = BytesIO()
     if merge_mode:
-        overview_bytes = _read_enterprise_file(overview)
+        chapters_bytes = package_bytes
         docx_merge.trim_template_front_matter(document)
         document.save(buffer)
         shell_bytes = buffer.getvalue()
         header_line = f"{report['front']['project_name']}{report['front']['header_suffix']}"
-        if overview_bytes:
+        if chapters_bytes:
             if sys.platform == "win32":
                 try:
-                    shell_bytes = docx_merge.merge_overview_com(shell_bytes, overview_bytes)
+                    shell_bytes = docx_merge.merge_overview_com(shell_bytes, chapters_bytes)
                     shell_bytes = docx_merge.fix_body_section_headers(shell_bytes, header_line)
                 except Exception as exc:
                     logger.warning("Word 合并概况失败，回退 python-docx：%s", exc)
                     document = Document(BytesIO(shell_bytes))
-                    docx_merge.append_docx_bytes(document, overview_bytes)
+                    docx_merge.append_docx_bytes(document, chapters_bytes)
                     buffer = BytesIO()
                     document.save(buffer)
                     shell_bytes = docx_merge.fix_body_section_headers(buffer.getvalue(), header_line)
             else:
                 document = Document(BytesIO(shell_bytes))
-                docx_merge.append_docx_bytes(document, overview_bytes)
+                docx_merge.append_docx_bytes(document, chapters_bytes)
                 buffer = BytesIO()
                 document.save(buffer)
                 shell_bytes = docx_merge.fix_body_section_headers(buffer.getvalue(), header_line)
@@ -297,14 +314,17 @@ def render(report, report_no, enterprise_files=None):
 
     trailer = report.get("appendix_trailer_blocks") or []
     if merge_mode:
-        wbst_bytes = _read_enterprise_file(wbst)
-        support_bytes = _read_enterprise_file(support)
-        payload = docx_merge.append_appendices_only(
-            payload,
-            wbst_bytes,
-            support_bytes,
-            appendix_chapter=report.get("appendix_chapter", 7),
-        )
+        if apps_bytes:
+            payload = docx_merge.append_enterprise_part(payload, apps_bytes)
+        else:
+            wbst_bytes = _read_enterprise_file(wbst)
+            support_bytes = _read_enterprise_file(support)
+            payload = docx_merge.append_appendices_only(
+                payload,
+                wbst_bytes,
+                support_bytes,
+                appendix_chapter=report.get("appendix_chapter", 7),
+            )
         if trailer:
             document = Document(BytesIO(payload))
             append_blocks(document, trailer)
